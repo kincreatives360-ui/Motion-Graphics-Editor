@@ -1,0 +1,6 @@
+{
+  "name": "Motion Graphics Editor",
+  "description": "A web-based motion graphics and canvas animation editor.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
