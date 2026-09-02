@@ -13,7 +13,6 @@ import {
   Search,
   Share2,
   SlidersHorizontal,
-  Sparkles,
   SunMedium,
   TextCursorInput,
   ZoomIn,
@@ -21,10 +20,13 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { useEditorStore, type ToolId } from "./store/editor-store";
+import { CanvasStage } from "./canvas/CanvasStage";
+import { LayerTree } from "./components/LayerTree";
+import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
 
 const queryClient = new QueryClient();
 
-type ToolId = "scene" | "hand" | "shape" | "text" | "node" | "grid";
 type BackgroundMode = "Color" | "Image" | "Shader";
 
 function IconButton({
@@ -57,6 +59,7 @@ function IconButton({
 function LeftPanel() {
   const [tab, setTab] = useState<"File" | "Assets">("File");
   const [searchOpen, setSearchOpen] = useState(false);
+  const addLayer = useEditorStore((state) => state.addLayer);
 
   return (
     <aside className="left-panel" aria-label="Project files and assets">
@@ -65,7 +68,11 @@ function LeftPanel() {
           <span>Canvas</span>
           <ChevronDown size={11} strokeWidth={1.8} />
         </button>
-        <IconButton label="Create new item" testId="button-add-item">
+        <IconButton
+          label="Create new item"
+          testId="button-add-item"
+          onClick={() => addLayer()}
+        >
           <Plus size={14} strokeWidth={1.7} />
         </IconButton>
       </div>
@@ -110,18 +117,44 @@ function LeftPanel() {
           />
         </div>
       )}
-      <div className="panel-empty" data-testid="text-empty-layers">No layers.</div>
+      {tab === "File" ? (
+        <LayerTree />
+      ) : (
+        <div className="panel-empty" data-testid="text-empty-assets">
+          No assets.
+        </div>
+      )}
     </aside>
   );
 }
 
 function Inspector() {
+  const saveStatus = useEditorStore((state) => state.saveStatus);
+  const projectName = useEditorStore((state) => state.projectName);
+  const setProjectName = useEditorStore((state) => state.setProjectName);
+  const aspectRatio = useEditorStore((state) => state.aspectRatio);
+  const setAspectRatio = useEditorStore((state) => state.setAspectRatio);
+
   const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>("Color");
-  const [projectName, setProjectName] = useState("Untitled project");
-  const [ratio, setRatio] = useState("Landscape 16:9");
   const [lens, setLens] = useState("F 50 mm");
-  const [helpOpen, setHelpOpen] = useState(false);
   const [shared, setShared] = useState(false);
+
+  const ratioValue =
+    aspectRatio === "9:16"
+      ? "Portrait 9:16"
+      : aspectRatio === "1:1"
+      ? "Square 1:1"
+      : "Landscape 16:9";
+
+  const handleRatioChange = (val: string) => {
+    if (val.includes("9:16")) {
+      setAspectRatio("9:16");
+    } else if (val.includes("1:1")) {
+      setAspectRatio("1:1");
+    } else {
+      setAspectRatio("16:9");
+    }
+  };
 
   return (
     <aside className="right-panel" aria-label="Project inspector">
@@ -161,8 +194,8 @@ function Inspector() {
           <span className="select-wrap">
             <select
               className="select-input"
-              value={ratio}
-              onChange={(event) => setRatio(event.target.value)}
+              value={ratioValue}
+              onChange={(event) => handleRatioChange(event.target.value)}
               data-testid="select-aspect-ratio"
             >
               <option>Landscape 16:9</option>
@@ -204,27 +237,45 @@ function Inspector() {
           </button>
         </div>
       </div>
-      <div className="inspector-footer">
-        <button
-          className="ask-button"
-          type="button"
-          data-testid="button-ask-raylight"
-          onClick={() => setHelpOpen((value) => !value)}
-        >
-          <Sparkles size={11} strokeWidth={1.8} style={{ verticalAlign: "middle", marginRight: 4 }} />
-          Ask Raylight
-        </button>
+      <div className="inspector-footer flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <IconButton
+            label="Presets"
+            testId="button-open-presets"
+            onClick={() => {
+              console.log("Open presets");
+            }}
+          >
+            <SlidersHorizontal size={12} strokeWidth={1.7} />
+          </IconButton>
+          <span
+            data-testid="status-local-save"
+            className="text-[9px] text-[#718096] flex items-center gap-1 select-none font-medium"
+            title={saveStatus === "saving" ? "Saving to local database..." : "Document saved locally"}
+          >
+            {saveStatus === "saving" ? (
+              <>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span>Saving…</span>
+              </>
+            ) : (
+              <>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
+                <span>Saved locally</span>
+              </>
+            )}
+          </span>
+        </div>
         <button
           className="help-button"
           type="button"
           aria-label="Help"
           data-testid="button-help"
-          onClick={() => setHelpOpen((value) => !value)}
         >
           <CircleHelp size={12} strokeWidth={1.8} />
         </button>
       </div>
-      {(helpOpen || shared) && (
+      {shared && (
         <div
           role="status"
           data-testid="status-editor-prompt"
@@ -241,7 +292,7 @@ function Inspector() {
             fontSize: 9,
           }}
         >
-          {shared ? "Share link ready" : "Raylight help is ready"}
+          Share link ready
         </div>
       )}
     </aside>
@@ -249,8 +300,11 @@ function Inspector() {
 }
 
 function Stage() {
-  const [tool, setTool] = useState<ToolId>("scene");
-  const [playing, setPlaying] = useState(false);
+  const activeTool = useEditorStore((state) => state.activeTool);
+  const setActiveTool = useEditorStore((state) => state.setActiveTool);
+  const playing = useEditorStore((state) => state.playing);
+  const setPlaying = useEditorStore((state) => state.setPlaying);
+
   const tools: Array<{ id: ToolId; label: string; icon: React.ReactNode }> = [
     { id: "scene", label: "Scene select", icon: <MousePointer2 size={13} strokeWidth={1.6} /> },
     { id: "hand", label: "Pan canvas", icon: <Hand size={13} strokeWidth={1.6} /> },
@@ -261,24 +315,18 @@ function Stage() {
   ];
 
   return (
-    <section className="center-stage" aria-label="Empty composition stage">
-      <div className="stage-wrap">
-        <div className="canvas" data-testid="canvas-preview" aria-label="Empty black composition preview" />
-        <button className="zoom-pill" type="button" data-testid="button-canvas-zoom" title="Canvas zoom">
-          <ZoomIn size={11} strokeWidth={1.7} />
-          73%
-        </button>
-      </div>
+    <section className="center-stage" aria-label="Composition stage">
+      <CanvasStage />
       <div className="stage-tools" role="toolbar" aria-label="Canvas tools">
         {tools.map(({ id, label, icon }) => (
           <button
             key={id}
-            className={`tool-button ${tool === id ? "active" : ""}`}
+            className={`tool-button ${activeTool === id ? "active" : ""}`}
             type="button"
             aria-label={label}
             title={label}
             data-testid={`button-tool-${id}`}
-            onClick={() => setTool(id)}
+            onClick={() => setActiveTool(id)}
           >
             {icon}
           </button>
@@ -342,6 +390,8 @@ function Timeline() {
 }
 
 function Editor() {
+  useEditorShortcuts();
+
   return (
     <main className="editor">
       <LeftPanel />
