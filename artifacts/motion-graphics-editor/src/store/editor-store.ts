@@ -13,6 +13,7 @@ import { isKeyframeTrack } from "./animation-blocks";
 import type { AnimationPreset, SceneTemplate } from "../presets/preset-library";
 
 export type LayerType = "shape" | "text" | "image" | "group";
+export type MockupType = "none" | "iphone" | "macbook" | "safari";
 
 export interface Transform {
   x: number;
@@ -20,6 +21,8 @@ export interface Transform {
   width: number;
   height: number;
   rotation: number; // degrees
+  rotateX?: number; // degrees (-80 to 80, 3D tilt/pitch)
+  rotateY?: number; // degrees (-80 to 80, 3D swivel/yaw)
   depth: number; // 0 = camera plane, positive = further away
 }
 
@@ -32,6 +35,7 @@ export interface Layer {
   opacity: number; // 0-1
   visible: boolean;
   locked: boolean;
+  mockup?: MockupType;
   // type-specific payload, keep it a discriminated union on `type`
   shape?: {
     kind: "rect" | "ellipse" | "path";
@@ -71,8 +75,29 @@ export interface Camera {
   x: number;
   y: number;
   z: number;
+  pitch?: number; // degrees (-85 to 85, tilt)
+  yaw?: number;   // degrees (-180 to 180, orbit pan)
+  roll?: number;  // degrees (-180 to 180, Dutch roll)
   fov: number; // degrees
-  focusDistance: number; // for depth of field, added later
+  focalLengthMm?: number; // 24, 35, 50, 85 mm
+  apertureFStop?: number; // 1.4, 2.0, 2.8, 5.6, 11
+  focusDistance: number; // for depth of field
+  target?: { x: number; y: number; z: number }; // orbit anchor point
+}
+
+export interface SceneLighting {
+  enabled: boolean;
+  intensity: number; // 0 to 1 (default 0.6)
+  lightX: number;
+  lightY: number;
+  shadowBlur: number;
+  shadowOpacity: number;
+}
+
+export interface OpticsSettings {
+  chromaticAberration: number; // 0 to 1
+  filmGrain: number; // 0 to 1
+  vignette: number; // 0 to 1
 }
 
 export interface BloomSettings {
@@ -90,6 +115,7 @@ export interface Scene {
   layers: Layer[];
   animationBlocks: AnimationBlock[];
   camera: Camera;
+  lighting?: SceneLighting;
 }
 
 export interface EditorDocument {
@@ -99,6 +125,7 @@ export interface EditorDocument {
   activeSceneId: string;
   selectedLayerIds: string[];
   bloom?: BloomSettings;
+  optics?: OpticsSettings;
   assets?: ProjectAsset[];
 }
 
@@ -147,6 +174,9 @@ export interface EditorStoreState extends EditorDocument {
   addScene: (scene?: Partial<Scene>) => string;
   moveLayerDepth: (id: string, delta: number) => void;
   updateCamera: (partial: Partial<Camera>, sceneId?: string) => void;
+  resetCamera: (sceneId?: string) => void;
+  updateSceneLighting: (partial: Partial<SceneLighting>, sceneId?: string) => void;
+  updateOptics: (partial: Partial<OpticsSettings>) => void;
   addAnimationBlock: (
     sceneId: string | undefined,
     block: Omit<AnimationBlock, "id"> & { id?: string },
@@ -269,8 +299,22 @@ const initialScene: Scene = {
     x: 0,
     y: 0,
     z: 0,
+    pitch: 0,
+    yaw: 0,
+    roll: 0,
     fov: 60,
+    focalLengthMm: 50,
+    apertureFStop: 2.8,
     focusDistance: 1000,
+    target: { x: 960, y: 540, z: 0 },
+  },
+  lighting: {
+    enabled: true,
+    intensity: 0.6,
+    lightX: -300,
+    lightY: -450,
+    shadowBlur: 24,
+    shadowOpacity: 0.35,
   },
 };
 
@@ -286,6 +330,11 @@ const initialDocument: EditorDocument = {
     threshold: 200,
     intensity: 1.0,
     blurPx: 16,
+  },
+  optics: {
+    chromaticAberration: 0,
+    filmGrain: 0.08,
+    vignette: 0.15,
   },
 };
 
@@ -1018,7 +1067,12 @@ export const useEditorStore = create<EditorStoreState>()(
                       x: 0,
                       y: 0,
                       z: 0,
+                      pitch: 0,
+                      yaw: 0,
+                      roll: 0,
                       fov: 60,
+                      focalLengthMm: 50,
+                      apertureFStop: 2.8,
                       focusDistance: 1000,
                     }),
                     ...partial,
@@ -1026,6 +1080,69 @@ export const useEditorStore = create<EditorStoreState>()(
                 }
               : scene,
           ),
+        }));
+      },
+
+      resetCamera: (sceneId) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) =>
+            scene.id === targetSceneId
+              ? {
+                  ...scene,
+                  camera: {
+                    x: 0,
+                    y: 0,
+                    z: 0,
+                    pitch: 0,
+                    yaw: 0,
+                    roll: 0,
+                    fov: 60,
+                    focalLengthMm: 50,
+                    apertureFStop: 2.8,
+                    focusDistance: 1000,
+                    target: { x: 960, y: 540, z: 0 },
+                  },
+                }
+              : scene,
+          ),
+        }));
+      },
+
+      updateSceneLighting: (partial, sceneId) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) =>
+            scene.id === targetSceneId
+              ? {
+                  ...scene,
+                  lighting: {
+                    ...(scene.lighting || {
+                      enabled: true,
+                      intensity: 0.6,
+                      lightX: -300,
+                      lightY: -450,
+                      shadowBlur: 24,
+                      shadowOpacity: 0.35,
+                    }),
+                    ...partial,
+                  },
+                }
+              : scene,
+          ),
+        }));
+      },
+
+      updateOptics: (partial) => {
+        set((state) => ({
+          optics: {
+            ...(state.optics || {
+              chromaticAberration: 0,
+              filmGrain: 0.08,
+              vignette: 0.15,
+            }),
+            ...partial,
+          },
         }));
       },
 

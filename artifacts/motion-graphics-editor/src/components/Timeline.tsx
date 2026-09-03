@@ -463,26 +463,32 @@ export function Timeline() {
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
-              className="bg-[#181a1e] border-[#292c33] text-[#cfd3dc] text-[9.5px] min-w-[140px]"
+              className="w-48 max-h-[300px] overflow-y-auto bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[150px] shadow-2xl rounded-md p-1 outline-none"
             >
-              <DropdownMenuLabel className="text-[8.5px] uppercase tracking-wider text-[#6b7280] px-2 py-1">
-                Animation Presets
+              <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#717684] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
+                <span className="flex items-center gap-1.5">
+                  <Sparkles size={8} className="text-[#c084fc]" />
+                  <span>Animation Presets</span>
+                </span>
+                <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">blocks</span>
               </DropdownMenuLabel>
-              <DropdownMenuSeparator className="bg-[#24272e]" />
-              {BLOCK_PRESETS.map((preset) => (
-                <DropdownMenuItem
-                  key={preset.id}
-                  className="cursor-pointer hover:bg-[#22262e] hover:text-white px-2 py-1 flex items-center justify-between"
-                  onClick={() =>
-                    handleAddBlock(
-                      selectedLayerIds.length === 1 ? selectedLayerIds[0] : null,
-                      preset.id,
-                    )
-                  }
-                >
-                  <span className="capitalize">{preset.label}</span>
-                </DropdownMenuItem>
-              ))}
+              <div className="space-y-0.5">
+                {BLOCK_PRESETS.map((preset) => (
+                  <DropdownMenuItem
+                    key={preset.id}
+                    className="cursor-pointer hover:bg-[#20242e] hover:text-white focus:bg-[#20242e] focus:text-white px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
+                    onClick={() =>
+                      handleAddBlock(
+                        selectedLayerIds.length === 1 ? selectedLayerIds[0] : null,
+                        preset.id,
+                      )
+                    }
+                  >
+                    <span className="capitalize">{preset.label}</span>
+                    <span className="text-[7.5px] text-[#4b5563] font-mono">preset</span>
+                  </DropdownMenuItem>
+                ))}
+              </div>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -555,17 +561,21 @@ export function Timeline() {
               </DropdownMenuTrigger>
               <DropdownMenuContent
                 align="start"
-                className="bg-[#181a1e] border-[#292c33] text-[#cfd3dc] text-[9.5px] min-w-[140px]"
+                className="w-48 bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[150px] shadow-2xl rounded-md p-1 outline-none"
               >
-                <DropdownMenuLabel className="text-[8.5px] uppercase tracking-wider text-[#34d399] px-2 py-1 flex items-center gap-1">
-                  <CameraIcon size={10} /> Camera Track
+                <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#34d399] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
+                  <span className="flex items-center gap-1.5">
+                    <CameraIcon size={9} />
+                    <span>Camera Track</span>
+                  </span>
+                  <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">motion</span>
                 </DropdownMenuLabel>
-                <DropdownMenuSeparator className="bg-[#24272e]" />
                 <DropdownMenuItem
-                  className="cursor-pointer hover:bg-[#064e3b] hover:text-[#6ee7b7] px-2 py-1.5"
+                  className="cursor-pointer hover:bg-[#064e3b] hover:text-[#6ee7b7] focus:bg-[#064e3b] focus:text-[#6ee7b7] px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
                   onClick={() => handleAddCameraBlock()}
                 >
                   <span>Camera Move (Pan / Zoom)</span>
+                  <span className="text-[7.5px] text-[#10b981]/70 font-mono">block</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -632,7 +642,7 @@ export function Timeline() {
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
-                          className="w-4 h-4 rounded hover:bg-[#252830] text-[#6b7280] hover:text-[#d1d5db] flex items-center justify-center"
+                          className="w-4 h-4 rounded hover:bg-[#252830] text-[#6b7280] hover:text-[#d1d5db] flex items-center justify-center transition-colors"
                           title="Add animation block or keyframe track"
                           onClick={(e) => e.stopPropagation()}
                           data-testid={`add-menu-${layer.id}`}
@@ -642,36 +652,58 @@ export function Timeline() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="start"
-                        className="bg-[#181a1e] border-[#292c33] text-[#cfd3dc] text-[9.5px] min-w-[140px]"
+                        className="w-48 max-h-[320px] overflow-y-auto bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[150px] shadow-2xl rounded-md p-1 outline-none"
                       >
-                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#38bdf8] px-2 py-1 flex items-center gap-1">
-                          <Diamond size={8} /> Add Keyframe Track
+                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#38bdf8] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Diamond size={8} className="fill-[#0284c7] text-[#38bdf8]" />
+                            <span>Add Keyframe Track</span>
+                          </span>
+                          <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">curves</span>
                         </DropdownMenuLabel>
-                        {availableProps.map((prop) => (
-                          <DropdownMenuItem
-                            key={prop.id}
-                            className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] px-2 py-1 flex items-center justify-between"
-                            onClick={() => handleAddTrack(layer.id, prop.id)}
-                            data-testid={`menu-add-kf-${layer.id}-${prop.id}`}
-                          >
-                            <span>{prop.label}</span>
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator className="bg-[#24272e]" />
-                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#6b7280] px-2 py-1">
-                          Animation Presets
+                        <div className="space-y-0.5">
+                          {availableProps.map((prop) => {
+                            const hasTrack = keyframeTracks.some((t) => t.property === prop.id);
+                            return (
+                              <DropdownMenuItem
+                                key={prop.id}
+                                className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] focus:bg-[#1a2c3d] focus:text-[#38bdf8] px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
+                                onClick={() => handleAddTrack(layer.id, prop.id)}
+                                data-testid={`menu-add-kf-${layer.id}-${prop.id}`}
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${hasTrack ? "bg-[#38bdf8] shadow-[0_0_4px_#38bdf8]" : "bg-[#333742]"}`} />
+                                  <span>{prop.label}</span>
+                                </span>
+                                {hasTrack && (
+                                  <span className="text-[7.5px] text-[#38bdf8] font-mono opacity-80">
+                                    active
+                                  </span>
+                                )}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </div>
+                        <DropdownMenuSeparator className="bg-[#20232a] my-1.5" />
+                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#717684] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles size={8} className="text-[#c084fc]" />
+                            <span>Animation Presets</span>
+                          </span>
+                          <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">blocks</span>
                         </DropdownMenuLabel>
-                        {BLOCK_PRESETS.filter((p) => p.id !== "camera-move").map((preset) => (
-                          <DropdownMenuItem
-                            key={preset.id}
-                            className="cursor-pointer hover:bg-[#22262e] px-2 py-1"
-                            onClick={() => handleAddBlock(layer.id, preset.id)}
-                          >
-                            <span className="capitalize">
-                              {preset.label}
-                            </span>
-                          </DropdownMenuItem>
-                        ))}
+                        <div className="space-y-0.5">
+                          {BLOCK_PRESETS.filter((p) => p.id !== "camera-move").map((preset) => (
+                            <DropdownMenuItem
+                              key={preset.id}
+                              className="cursor-pointer hover:bg-[#20242e] hover:text-white focus:bg-[#20242e] focus:text-white px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
+                              onClick={() => handleAddBlock(layer.id, preset.id)}
+                            >
+                              <span className="capitalize">{preset.label}</span>
+                              <span className="text-[7.5px] text-[#4b5563] font-mono">preset</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </div>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -739,17 +771,25 @@ export function Timeline() {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent
                               align="start"
-                              className="bg-[#181a1e] border-[#292c33] text-[#cfd3dc] text-[9px] min-w-[120px]"
+                              className="w-44 max-h-[260px] overflow-y-auto bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[130px] shadow-2xl rounded-md p-1 outline-none"
                             >
-                              {availableProps.map((prop) => (
-                                <DropdownMenuItem
-                                  key={prop.id}
-                                  className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] px-2 py-1"
-                                  onClick={() => handleAddTrack(layer.id, prop.id)}
-                                >
-                                  {prop.label}
-                                </DropdownMenuItem>
-                              ))}
+                              <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#38bdf8] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
+                                <span className="flex items-center gap-1.5">
+                                  <Diamond size={8} className="fill-[#0284c7] text-[#38bdf8]" />
+                                  <span>Add Track</span>
+                                </span>
+                              </DropdownMenuLabel>
+                              <div className="space-y-0.5">
+                                {availableProps.map((prop) => (
+                                  <DropdownMenuItem
+                                    key={prop.id}
+                                    className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] focus:bg-[#1a2c3d] focus:text-[#38bdf8] px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
+                                    onClick={() => handleAddTrack(layer.id, prop.id)}
+                                  >
+                                    <span>{prop.label}</span>
+                                  </DropdownMenuItem>
+                                ))}
+                              </div>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>

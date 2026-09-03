@@ -19,6 +19,13 @@ import {
   RotateCcw,
   MoreVertical,
   Diamond,
+  Sun,
+  Smartphone,
+  Monitor,
+  Compass,
+  Eye,
+  Sliders,
+  Box,
 } from "lucide-react";
 import { SaveAnimationPresetModal } from "./SavePresetModals";
 import { useEditorStore, useEditorUIStore, type Layer, type BackgroundMode } from "../store/editor-store";
@@ -133,6 +140,10 @@ export function Inspector() {
     blurPx: 16,
   };
   const updateBloom = useEditorStore((state) => state.updateBloom);
+  const optics = useEditorStore((state) => state.optics) || { filmGrain: 0, vignette: 0, chromaticAberration: 0 };
+  const updateOptics = useEditorStore((state) => state.updateOptics);
+  const updateSceneLighting = useEditorStore((state) => state.updateSceneLighting);
+  const resetCamera = useEditorStore((state) => state.resetCamera);
   const openPresets = useEditorUIStore((state) => state.openPresets);
   const setExportModalOpen = useEditorUIStore((state) => state.setExportModalOpen);
   const setIsCameraSelected = useEditorUIStore((state) => state.setIsCameraSelected);
@@ -407,41 +418,41 @@ export function Inspector() {
                   </div>
 
                   {backgroundMode === "Color" && (
-                    <>
-                      <span className="field-label">Color</span>
+                    <div className="mt-1.5 flex items-center justify-between">
+                      <span className="field-label mb-0">Color</span>
                       <button
-                        className="color-input"
+                        className="color-input hover:border-[#4b7991] transition-colors cursor-pointer"
                         type="button"
                         data-testid="button-background-color"
                         title="Choose background color"
                       >
                         <span className="color-swatch" />
-                        <span>000102</span>
+                        <span>#000102</span>
                       </button>
-                    </>
+                    </div>
                   )}
 
                   {backgroundMode === "Image" && (
-                    <div className="mt-2 text-[8.5px] text-[#6b7280]">
+                    <div className="mt-2 text-[9px] text-[#81838a] bg-[#16181c] border border-[#26282e] rounded p-2 text-center">
                       <span>Default Canvas Background</span>
                     </div>
                   )}
 
                   {backgroundMode === "Shader" && (
                     <div
-                      className="mt-2.5 p-2 bg-[#121418] border border-[#272a31] rounded flex flex-col gap-2.5"
+                      className="mt-2.5 p-2 bg-[#16181c] border border-[#26282e] rounded flex flex-col gap-2"
                       data-testid="shader-bloom-controls"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
-                          <Sparkles size={11} className="text-[#c084fc]" />
-                          <span className="text-[9.5px] font-medium text-[#e2e8f0]">Bloom Post-Processing</span>
+                          <Sparkles size={11} className="text-[#38bdf8]" />
+                          <span className="text-[9px] font-medium text-[#d8d9dc]">Bloom Post-Processing</span>
                         </div>
                         {/* Bloom toggle switch */}
                         <button
                           type="button"
-                          className={`relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                            bloom.enabled ? "bg-[#9333ea]" : "bg-[#27272a]"
+                          className={`relative inline-flex h-3.5 w-6.5 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                            bloom.enabled ? "bg-[#0284c7]" : "bg-[#252830]"
                           }`}
                           role="switch"
                           aria-checked={bloom.enabled}
@@ -450,7 +461,7 @@ export function Inspector() {
                           title={bloom.enabled ? "Disable Bloom Effect" : "Enable Bloom Effect"}
                         >
                           <span
-                            className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
                               bloom.enabled ? "translate-x-3" : "translate-x-0"
                             }`}
                           />
@@ -459,9 +470,9 @@ export function Inspector() {
 
                       {/* Threshold Slider */}
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between text-[8px] text-[#94a3b8]">
+                        <div className="flex items-center justify-between text-[8px] text-[#81838a]">
                           <span>Luminance Threshold</span>
-                          <span className="font-mono text-[#c084fc] font-semibold">{bloom.threshold ?? 200}</span>
+                          <span className="font-mono text-[#d8d9dc] font-semibold">{bloom.threshold ?? 200}</span>
                         </div>
                         <input
                           type="range"
@@ -470,20 +481,16 @@ export function Inspector() {
                           step="5"
                           value={bloom.threshold ?? 200}
                           data-testid="slider-bloom-threshold"
-                          className="w-full accent-[#a855f7] h-1.5 bg-[#262930] rounded cursor-pointer"
+                          className="w-full h-1 bg-[#282a30] rounded-lg appearance-none cursor-pointer accent-[#38bdf8]"
                           onChange={(e) => updateBloom({ threshold: parseInt(e.target.value, 10) })}
                         />
-                        <div className="flex justify-between text-[7px] text-[#52525b]">
-                          <span>50 (all highlights)</span>
-                          <span>255 (extreme only)</span>
-                        </div>
                       </div>
 
                       {/* Intensity Slider */}
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between text-[8px] text-[#94a3b8]">
+                        <div className="flex items-center justify-between text-[8px] text-[#81838a]">
                           <span>Bloom Intensity</span>
-                          <span className="font-mono text-[#c084fc] font-semibold">{Math.round((bloom.intensity ?? 1.0) * 100)}%</span>
+                          <span className="font-mono text-[#d8d9dc] font-semibold">{Math.round((bloom.intensity ?? 1.0) * 100)}%</span>
                         </div>
                         <input
                           type="range"
@@ -492,16 +499,16 @@ export function Inspector() {
                           step="0.05"
                           value={bloom.intensity ?? 1.0}
                           data-testid="slider-bloom-intensity"
-                          className="w-full accent-[#a855f7] h-1.5 bg-[#262930] rounded cursor-pointer"
+                          className="w-full h-1 bg-[#282a30] rounded-lg appearance-none cursor-pointer accent-[#38bdf8]"
                           onChange={(e) => updateBloom({ intensity: parseFloat(e.target.value) })}
                         />
                       </div>
 
                       {/* Blur Radius Slider */}
                       <div className="flex flex-col gap-1">
-                        <div className="flex items-center justify-between text-[8px] text-[#94a3b8]">
+                        <div className="flex items-center justify-between text-[8px] text-[#81838a]">
                           <span>Diffusion Blur Radius</span>
-                          <span className="font-mono text-[#c084fc] font-semibold">{bloom.blurPx ?? 16}px</span>
+                          <span className="font-mono text-[#d8d9dc] font-semibold">{bloom.blurPx ?? 16}px</span>
                         </div>
                         <input
                           type="range"
@@ -510,7 +517,7 @@ export function Inspector() {
                           step="2"
                           value={bloom.blurPx ?? 16}
                           data-testid="slider-bloom-blur"
-                          className="w-full accent-[#a855f7] h-1.5 bg-[#262930] rounded cursor-pointer"
+                          className="w-full h-1 bg-[#282a30] rounded-lg appearance-none cursor-pointer accent-[#38bdf8]"
                           onChange={(e) => updateBloom({ blurPx: parseInt(e.target.value, 10) })}
                         />
                       </div>
@@ -519,7 +526,7 @@ export function Inspector() {
                 </div>
 
                 {/* Camera (3D Parallax & Projection) Controls */}
-                <div className="section-divider my-3 border-t border-[#202227]" />
+                <div className="section-divider my-2.5 border-t border-[#202227]" />
                 <div
                   className="flex items-center justify-between mb-2 cursor-pointer group"
                   onClick={() => {
@@ -529,12 +536,12 @@ export function Inspector() {
                   title="Click to select Camera and show Camera Focus control"
                 >
                   <div className="flex items-center gap-1.5">
-                    <CameraIcon size={12} className="text-[#34d399] group-hover:scale-110 transition-transform" />
-                    <span className="section-label mb-0 text-[#e2e8f0] group-hover:text-[#34d399] transition-colors">Camera (3D Parallax)</span>
+                    <CameraIcon size={12} className="text-[#38bdf8] group-hover:scale-110 transition-transform" />
+                    <span className="section-label mb-0 text-[#d8d9dc] group-hover:text-white transition-colors">Camera (3D Parallax)</span>
                   </div>
                   <button
                     type="button"
-                    className="text-[8px] text-[#6b7280] hover:text-[#94a3b8] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#1a1d24]"
+                    className="text-[8.5px] text-[#81838a] hover:text-[#d8d9dc] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#1f2127]"
                     onClick={(e) => {
                       e.stopPropagation();
                       setIsCameraSelected(true);
@@ -548,91 +555,346 @@ export function Inspector() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <label className="field mb-0">
-                    <span className="field-label text-[8.5px]">Camera X</span>
-                    <input
-                      type="number"
-                      className="text-input font-mono text-[9px]"
-                      value={camera.x ?? 0}
-                      data-testid="input-camera-x"
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        updateCamera({ x: isNaN(val) ? 0 : val });
-                      }}
-                    />
-                  </label>
+                {/* Camera 3D Position */}
+                <div className="mb-2">
+                  <span className="text-[8.5px] font-medium text-[#81838a] mb-1 block">Position (3D)</span>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos X">
+                      <span className="text-[9px] font-mono text-[#6c6e75]">X</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        value={camera.x ?? 0}
+                        data-testid="input-camera-x"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ x: isNaN(val) ? 0 : val });
+                        }}
+                      />
+                    </label>
 
-                  <label className="field mb-0">
-                    <span className="field-label text-[8.5px]">Camera Y</span>
-                    <input
-                      type="number"
-                      className="text-input font-mono text-[9px]"
-                      value={camera.y ?? 0}
-                      data-testid="input-camera-y"
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        updateCamera({ y: isNaN(val) ? 0 : val });
-                      }}
-                    />
-                  </label>
-                </div>
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos Y">
+                      <span className="text-[9px] font-mono text-[#6c6e75]">Y</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        value={camera.y ?? 0}
+                        data-testid="input-camera-y"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ y: isNaN(val) ? 0 : val });
+                        }}
+                      />
+                    </label>
 
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <label className="field mb-0">
-                    <span className="field-label text-[8.5px]">Camera Z (Depth)</span>
-                    <input
-                      type="number"
-                      className="text-input font-mono text-[9px]"
-                      value={camera.z ?? 0}
-                      data-testid="input-camera-z"
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        updateCamera({ z: isNaN(val) ? 0 : val });
-                      }}
-                    />
-                  </label>
-
-                  <label className="field mb-0">
-                    <span className="field-label text-[8.5px]">FOV (Degrees)</span>
-                    <input
-                      type="number"
-                      className="text-input font-mono text-[9px]"
-                      min={10}
-                      max={160}
-                      value={camera.fov ?? 60}
-                      data-testid="input-camera-fov"
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        updateCamera({ fov: isNaN(val) ? 60 : val });
-                      }}
-                    />
-                  </label>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 mb-2">
-                  <label className="field mb-0">
-                    <span className="field-label text-[8.5px]">Focus Distance</span>
-                    <input
-                      type="number"
-                      className="text-input font-mono text-[9px]"
-                      value={camera.focusDistance ?? 1000}
-                      data-testid="input-camera-focus-distance"
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        updateCamera({ focusDistance: isNaN(val) ? 1000 : val });
-                      }}
-                    />
-                  </label>
-                  <div className="flex flex-col justify-center text-[8px] text-[#6b7280]">
-                    <span className="text-[#34d399] font-medium">Depth of Field</span>
-                    <span className="text-[7.5px] text-[#475569]">Layers blur with distance</span>
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos Z (Depth)">
+                      <span className="text-[9px] font-mono text-[#6c6e75]">Z</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        value={camera.z ?? 0}
+                        data-testid="input-camera-z"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ z: isNaN(val) ? 0 : val });
+                        }}
+                      />
+                    </label>
                   </div>
                 </div>
 
-                <div className="mt-1 flex items-center justify-between text-[8px] text-[#6b7280]">
-                  <span>Focal field: {camera.fov ?? 60}°</span>
-                  <span className="text-[#34d399]/80 font-mono">Depth-aware</span>
+                {/* 6DOF Extrinsic Rotation (Pitch, Yaw, Roll) */}
+                <div className="mb-2">
+                  <div className="text-[8.5px] font-medium text-[#81838a] mb-1 flex items-center gap-1">
+                    <Compass size={10} className="text-[#38bdf8]" />
+                    <span>Rotation (6DOF)</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pitch (Tilt X°)">
+                      <span className="text-[8.5px] font-mono text-[#6c6e75]">Pitch</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        value={Math.round(camera.pitch ?? 0)}
+                        data-testid="input-camera-pitch"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ pitch: isNaN(val) ? 0 : val });
+                        }}
+                      />
+                    </label>
+
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Yaw (Pan Y°)">
+                      <span className="text-[8.5px] font-mono text-[#6c6e75]">Yaw</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        value={Math.round(camera.yaw ?? 0)}
+                        data-testid="input-camera-yaw"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ yaw: isNaN(val) ? 0 : val });
+                        }}
+                      />
+                    </label>
+
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Roll (Dutch tilt Z°)">
+                      <span className="text-[8.5px] font-mono text-[#6c6e75]">Roll</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        value={Math.round(camera.roll ?? 0)}
+                        data-testid="input-camera-roll"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ roll: isNaN(val) ? 0 : val });
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Lens & Aperture */}
+                <div className="mb-2">
+                  <div className="text-[8.5px] font-medium text-[#81838a] mb-1 flex items-center gap-1">
+                    <Eye size={10} className="text-[#38bdf8]" />
+                    <span>Lens & Optical Depth</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Field of View (degrees)">
+                      <span className="text-[8.5px] font-mono text-[#6c6e75]">FOV</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        min={10}
+                        max={160}
+                        value={camera.fov ?? 60}
+                        data-testid="input-camera-fov"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ fov: isNaN(val) ? 60 : val });
+                        }}
+                      />
+                    </label>
+
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] relative" title="Aperture f-stop">
+                      <span className="text-[8px] font-mono text-[#6c6e75]">Apert</span>
+                      <select
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono cursor-pointer appearance-none pr-3"
+                        value={camera.aperture ?? 2.8}
+                        onChange={(e) => updateCamera({ aperture: parseFloat(e.target.value) })}
+                      >
+                        <option value={1.4} className="bg-[#1a1b1e] text-[#d8d9dc]">f/1.4</option>
+                        <option value={2.8} className="bg-[#1a1b1e] text-[#d8d9dc]">f/2.8</option>
+                        <option value={4.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/4.0</option>
+                        <option value={8.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/8.0</option>
+                        <option value={16.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/16</option>
+                      </select>
+                      <span className="pointer-events-none absolute right-1 text-[8px] text-[#65686e]">⌄</span>
+                    </label>
+
+                    <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Focus Distance (px)">
+                      <span className="text-[8.5px] font-mono text-[#6c6e75]">Focus</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                        value={Math.round(camera.focusDistance ?? 1000)}
+                        data-testid="input-camera-focus-distance"
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          updateCamera({ focusDistance: isNaN(val) ? 1000 : val });
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Studio Lighting Section */}
+                <div className="section-divider my-2.5 border-t border-[#202227]" />
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Sun size={12} className="text-[#38bdf8]" />
+                    <span className="section-label mb-0 text-[#d8d9dc]">Studio Lighting & Shadows</span>
+                  </div>
+                  <button
+                    type="button"
+                    className={`relative inline-flex h-3.5 w-6.5 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                      (activeScene?.lighting?.enabled ?? true) ? "bg-[#0284c7]" : "bg-[#252830]"
+                    }`}
+                    role="switch"
+                    aria-checked={activeScene?.lighting?.enabled ?? true}
+                    onClick={() =>
+                      updateSceneLighting({
+                        enabled: !(activeScene?.lighting?.enabled ?? true),
+                      })
+                    }
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-2.5 w-2.5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                        (activeScene?.lighting?.enabled ?? true) ? "translate-x-3" : "translate-x-0"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {(activeScene?.lighting?.enabled ?? true) && (
+                  <div className="space-y-2.5 p-2 bg-[#16181c] border border-[#26282e] rounded mb-3 shadow-xs">
+                    <div>
+                      <span className="text-[8.5px] font-medium text-[#81838a] mb-1.5 block">Light Source & Intensity</span>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Position X">
+                          <span className="text-[9px] font-mono text-[#6c6e75] select-none">X</span>
+                          <input
+                            type="number"
+                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                            value={activeScene?.lighting?.lightX ?? -300}
+                            onChange={(e) =>
+                              updateSceneLighting({ lightX: parseFloat(e.target.value) || 0 })
+                            }
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Position Y">
+                          <span className="text-[9px] font-mono text-[#6c6e75] select-none">Y</span>
+                          <input
+                            type="number"
+                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                            value={activeScene?.lighting?.lightY ?? -450}
+                            onChange={(e) =>
+                              updateSceneLighting({ lightY: parseFloat(e.target.value) || 0 })
+                            }
+                          />
+                        </label>
+                        <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Intensity (0.0 - 2.0)">
+                          <span className="text-[9px] font-mono text-[#6c6e75] select-none">Int</span>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            max="2"
+                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                            value={activeScene?.lighting?.intensity ?? 0.85}
+                            onChange={(e) =>
+                              updateSceneLighting({ intensity: parseFloat(e.target.value) || 0.85 })
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[#202227]">
+                      <div>
+                        <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
+                          <span className="text-[#999ba0]">Contact Shadow</span>
+                          <span className="font-mono text-[9px] text-[#d8d9dc]">
+                            {Math.round((activeScene?.lighting?.shadowOpacity ?? 0.35) * 100)}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          className="inspector-slider w-full"
+                          value={activeScene?.lighting?.shadowOpacity ?? 0.35}
+                          onChange={(e) =>
+                            updateSceneLighting({ shadowOpacity: parseFloat(e.target.value) })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
+                          <span className="text-[#999ba0]">Shadow Blur</span>
+                          <span className="font-mono text-[9px] text-[#d8d9dc]">{activeScene?.lighting?.shadowBlur ?? 24}px</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="60"
+                          step="2"
+                          className="inspector-slider w-full"
+                          value={activeScene?.lighting?.shadowBlur ?? 24}
+                          onChange={(e) =>
+                            updateSceneLighting({ shadowBlur: parseInt(e.target.value, 10) })
+                          }
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Film-Grade Optics Section */}
+                <div className="section-divider my-2.5 border-t border-[#202227]" />
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles size={12} className="text-[#38bdf8]" />
+                    <span className="section-label mb-0 text-[#d8d9dc]">Film Optics & Imperfections</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-[8.5px] text-[#81838a] hover:text-[#d8d9dc] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#1f2127]"
+                    onClick={() => updateOptics({ filmGrain: 0, vignette: 0, chromaticAberration: 0 })}
+                    title="Reset optics to defaults"
+                  >
+                    <RotateCcw size={9} />
+                    <span>Reset</span>
+                  </button>
+                </div>
+
+                <div className="space-y-2.5 p-2 bg-[#16181c] border border-[#26282e] rounded mb-3 shadow-xs">
+                  {/* Film Grain */}
+                  <div>
+                    <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
+                      <span className="text-[#999ba0]">35mm Film Grain</span>
+                      <span className="font-mono text-[9px] text-[#d8d9dc]">{Math.round((optics.filmGrain ?? 0) * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="0.4"
+                      step="0.01"
+                      className="inspector-slider w-full"
+                      value={optics.filmGrain ?? 0}
+                      onChange={(e) => updateOptics({ filmGrain: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  {/* Vignette */}
+                  <div>
+                    <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
+                      <span className="text-[#999ba0]">Lens Vignette</span>
+                      <span className="font-mono text-[9px] text-[#d8d9dc]">{Math.round((optics.vignette ?? 0) * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      className="inspector-slider w-full"
+                      value={optics.vignette ?? 0}
+                      onChange={(e) => updateOptics({ vignette: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  {/* Chromatic Aberration */}
+                  <div>
+                    <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
+                      <span className="text-[#999ba0]">Chromatic Aberration</span>
+                      <span className="font-mono text-[9px] text-[#d8d9dc]">
+                        {Math.round((optics.chromaticAberration ?? 0) * 100)}%
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      className="inspector-slider w-full"
+                      value={optics.chromaticAberration ?? 0}
+                      onChange={(e) =>
+                        updateOptics({ chromaticAberration: parseFloat(e.target.value) })
+                      }
+                    />
+                  </div>
                 </div>
               </TabsContent>
 
@@ -1003,6 +1265,66 @@ export function Inspector() {
                     </label>
                   </div>
 
+                  {/* 3D Tilt (X) & Swivel (Y) */}
+                  <div className="grid grid-cols-2 gap-2 mb-2">
+                    <label
+                      className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6"
+                      title="3D Tilt (Pitch X-axis rotation)"
+                    >
+                      <span className="text-[9px] font-mono text-[#38bdf8]">Tilt X°</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                        value={Math.round(selectedLayer.transform.rotateX || 0)}
+                        onChange={(e) =>
+                          handleTransformChange("rotateX", parseFloat(e.target.value))
+                        }
+                        data-testid="input-transform-rotate-x"
+                      />
+                    </label>
+                    <label
+                      className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6"
+                      title="3D Swivel (Yaw Y-axis rotation)"
+                    >
+                      <span className="text-[9px] font-mono text-[#38bdf8]">Swivel Y°</span>
+                      <input
+                        type="number"
+                        className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                        value={Math.round(selectedLayer.transform.rotateY || 0)}
+                        onChange={(e) =>
+                          handleTransformChange("rotateY", parseFloat(e.target.value))
+                        }
+                        data-testid="input-transform-rotate-y"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Device Mockup Frame */}
+                  <div className="mb-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[9px] text-[#999ba0] flex items-center gap-1">
+                        <Smartphone size={10} className="text-[#38bdf8]" />
+                        <span>3D Device Frame</span>
+                      </span>
+                    </div>
+                    <span className="select-wrap">
+                      <select
+                        className="select-input text-[9px]"
+                        value={selectedLayer.mockupFrame || "none"}
+                        onChange={(e) =>
+                          updateLayer(selectedLayer.id, {
+                            mockupFrame: e.target.value === "none" ? undefined : (e.target.value as any),
+                          })
+                        }
+                      >
+                        <option value="none">None (Raw Layer)</option>
+                        <option value="iphone">iPhone 16 Pro (Titanium + Island)</option>
+                        <option value="macbook">MacBook Pro (Aluminum + Notch)</option>
+                        <option value="browser">Safari Browser (Dark Header)</option>
+                      </select>
+                    </span>
+                  </div>
+
                   {/* Opacity Slider */}
                   <div className="mt-2">
                     <div className="flex items-center justify-between mb-1">
@@ -1017,7 +1339,7 @@ export function Inspector() {
                         min="0"
                         max="1"
                         step="0.01"
-                        className="w-full h-1 bg-[#282a30] rounded-lg appearance-none cursor-pointer accent-[#38bdf8]"
+                        className="inspector-slider w-full"
                         value={selectedLayer.opacity ?? 1}
                         onChange={(e) =>
                           handleOpacityChange(parseFloat(e.target.value))
@@ -1392,6 +1714,70 @@ export function Inspector() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Kinetic Typography Quick Presets */}
+                    <div className="mt-3 pt-2 border-t border-[#202227]">
+                      <span className="field-label text-[8.5px] text-[#38bdf8] flex items-center gap-1 mb-1.5">
+                        <Zap size={10} className="text-[#38bdf8]" />
+                        <span>Kinetic Typography Presets</span>
+                      </span>
+                      <div className="grid grid-cols-3 gap-1">
+                        <button
+                          type="button"
+                          className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
+                          onClick={() => {
+                            const start = Math.max(0, currentFrame);
+                            addAnimationBlock({
+                              layerId: selectedLayer.id,
+                              name: "Pop & Rise",
+                              preset: "fade-in",
+                              startFrame: start,
+                              durationFrames: 24,
+                              easing: "spring",
+                              deltaY: -20,
+                            });
+                          }}
+                        >
+                          Pop & Rise
+                        </button>
+                        <button
+                          type="button"
+                          className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
+                          onClick={() => {
+                            const start = Math.max(0, currentFrame);
+                            addAnimationBlock({
+                              layerId: selectedLayer.id,
+                              name: "Punch Scale",
+                              preset: "scale-spring",
+                              startFrame: start,
+                              durationFrames: 30,
+                              easing: "spring",
+                              scaleTo: 1.0,
+                            });
+                          }}
+                        >
+                          Punch Scale
+                        </button>
+                        <button
+                          type="button"
+                          className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
+                          onClick={() => {
+                            const start = Math.max(0, currentFrame);
+                            addAnimationBlock({
+                              layerId: selectedLayer.id,
+                              name: "Kinetic Slide",
+                              preset: "slide-left",
+                              startFrame: start,
+                              durationFrames: 25,
+                              easing: "spring",
+                              deltaX: 80,
+                            });
+                          }}
+                        >
+                          Kinetic Slide
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1486,54 +1872,76 @@ export function Inspector() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="end"
-                        className="bg-[#181a1e] border-[#292c33] text-[#cfd3dc] text-[9.5px] min-w-[150px]"
+                        className="w-48 max-h-[320px] overflow-y-auto bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[150px] shadow-2xl rounded-md p-1 outline-none"
                       >
-                        <DropdownMenuLabel className="text-[8.5px] uppercase tracking-wider text-[#38bdf8] px-2 py-1 flex items-center gap-1">
-                          <Diamond size={8} /> Add Keyframe Track
+                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#38bdf8] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Diamond size={8} className="fill-[#0284c7] text-[#38bdf8]" />
+                            <span>Add Keyframe Track</span>
+                          </span>
+                          <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">curves</span>
                         </DropdownMenuLabel>
-                        {getAnimatablePropertiesForLayer(selectedLayer).map((prop) => (
-                          <DropdownMenuItem
-                            key={prop.id}
-                            className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] px-2 py-1 flex items-center justify-between"
-                            onClick={() => {
-                              addKeyframeTrack(activeSceneId, selectedLayer.id, prop.id);
-                            }}
-                            data-testid={`inspector-add-kf-track-${prop.id}`}
-                          >
-                            <span>{prop.label}</span>
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator className="bg-[#24272e]" />
-                        <DropdownMenuLabel className="text-[8.5px] uppercase tracking-wider text-[#6b7280] px-2 py-1">
-                          Select Preset
+                        <div className="space-y-0.5">
+                          {getAnimatablePropertiesForLayer(selectedLayer).map((prop) => {
+                            const hasTrack = layerBlocks.filter(isKeyframeTrack).some((t) => t.property === prop.id);
+                            return (
+                              <DropdownMenuItem
+                                key={prop.id}
+                                className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] focus:bg-[#1a2c3d] focus:text-[#38bdf8] px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
+                                onClick={() => {
+                                  addKeyframeTrack(activeSceneId, selectedLayer.id, prop.id);
+                                }}
+                                data-testid={`inspector-add-kf-track-${prop.id}`}
+                              >
+                                <span className="flex items-center gap-1.5">
+                                  <span className={`w-1.5 h-1.5 rounded-full ${hasTrack ? "bg-[#38bdf8] shadow-[0_0_4px_#38bdf8]" : "bg-[#333742]"}`} />
+                                  <span>{prop.label}</span>
+                                </span>
+                                {hasTrack && (
+                                  <span className="text-[7.5px] text-[#38bdf8] font-mono opacity-80">
+                                    active
+                                  </span>
+                                )}
+                              </DropdownMenuItem>
+                            );
+                          })}
+                        </div>
+                        <DropdownMenuSeparator className="bg-[#20232a] my-1.5" />
+                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#717684] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles size={8} className="text-[#c084fc]" />
+                            <span>Animation Presets</span>
+                          </span>
+                          <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">blocks</span>
                         </DropdownMenuLabel>
-                        {BLOCK_PRESETS.map((preset) => (
-                          <DropdownMenuItem
-                            key={preset.id}
-                            className="cursor-pointer hover:bg-[#22262e] px-2 py-1 flex items-center justify-between"
-                            onClick={() => {
-                              const start = Math.min(
-                                (activeScene?.durationFrames || 180) - 10,
-                                currentFrame,
-                              );
-                              const end = Math.min(
-                                activeScene?.durationFrames || 180,
-                                start + 30,
-                              );
-                              addAnimationBlock(activeSceneId, {
-                                layerId: selectedLayer.id,
-                                preset: preset.id,
-                                startFrame: start,
-                                endFrame: end,
-                                easing: "ease-in-out",
-                              });
-                            }}
-                          >
-                            <span className="capitalize">
-                              {preset.label}
-                            </span>
-                          </DropdownMenuItem>
-                        ))}
+                        <div className="space-y-0.5">
+                          {BLOCK_PRESETS.map((preset) => (
+                            <DropdownMenuItem
+                              key={preset.id}
+                              className="cursor-pointer hover:bg-[#20242e] hover:text-white focus:bg-[#20242e] focus:text-white px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
+                              onClick={() => {
+                                const start = Math.min(
+                                  (activeScene?.durationFrames || 180) - 10,
+                                  currentFrame,
+                                );
+                                const end = Math.min(
+                                  activeScene?.durationFrames || 180,
+                                  start + 30,
+                                );
+                                addAnimationBlock(activeSceneId, {
+                                  layerId: selectedLayer.id,
+                                  preset: preset.id,
+                                  startFrame: start,
+                                  endFrame: end,
+                                  easing: "ease-in-out",
+                                });
+                              }}
+                            >
+                              <span className="capitalize">{preset.label}</span>
+                              <span className="text-[7.5px] text-[#4b5563] font-mono">preset</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </div>
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
@@ -1772,19 +2180,19 @@ export function Inspector() {
                               </DropdownMenuTrigger>
                               <DropdownMenuContent
                                 align="end"
-                                className="bg-[#181a1e] border-[#292c33] text-[#cfd3dc] text-[9.5px] min-w-[130px]"
+                                className="w-40 bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] shadow-2xl rounded-md p-1 outline-none"
                               >
                                 <DropdownMenuItem
-                                  className="cursor-pointer hover:bg-[#22262e] px-2 py-1.5 flex items-center gap-1.5 text-white"
+                                  className="cursor-pointer hover:bg-[#1e232d] hover:text-white focus:bg-[#1e232d] focus:text-white px-2 py-1.5 rounded-[3px] flex items-center gap-1.5 text-[#cbd5e1] transition-colors"
                                   onClick={() => setSavingBlockPreset(block)}
                                   data-testid={`menu-save-preset-${block.id}`}
                                 >
                                   <Sparkles size={11} className="text-[#38bdf8]" />
                                   <span>Save as preset</span>
                                 </DropdownMenuItem>
-                                <DropdownMenuSeparator className="bg-[#24272e]" />
+                                <DropdownMenuSeparator className="bg-[#20232a] my-1" />
                                 <DropdownMenuItem
-                                  className="cursor-pointer hover:bg-[#22262e] text-[#f87171] px-2 py-1.5 flex items-center gap-1.5"
+                                  className="cursor-pointer hover:bg-[#3f1618] hover:text-[#fca5a5] focus:bg-[#3f1618] focus:text-[#fca5a5] text-[#f87171] px-2 py-1.5 rounded-[3px] flex items-center gap-1.5 transition-colors"
                                   onClick={() => removeAnimationBlock(block.id)}
                                 >
                                   <Trash2 size={11} />

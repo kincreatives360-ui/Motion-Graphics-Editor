@@ -1,4 +1,4 @@
-import type { Layer, Scene, BloomSettings, Camera } from "../store/editor-store";
+import type { Layer, Scene, BloomSettings, Camera, SceneLighting, OpticsSettings, MockupType } from "../store/editor-store";
 import {
   computeRenderedLayer,
   projectLayer,
@@ -7,7 +7,12 @@ import {
   type CameraTransform,
   type AnimationBlock,
 } from "../store/animation-blocks";
-import { applyBloom } from "./post-processing";
+import {
+  applyBloom,
+  applyFilmGrain,
+  applyVignette,
+  applyChromaticAberration,
+} from "./post-processing";
 
 export interface ScreenTransformResult {
   x: number;
@@ -178,9 +183,12 @@ export function getScreenTransform(
       width: screenW,
       height: screenH,
       rotation: screenRotation,
+      rotateX: rendered.transform.rotateX,
+      rotateY: rendered.transform.rotateY,
     },
     opacity: screenOpacity,
     visible: rendered.visible,
+    mockup: layer.mockup,
     shape: layer.shape
       ? {
           ...layer.shape,
@@ -272,12 +280,108 @@ export async function preloadSceneImages(scene: Scene): Promise<void> {
 }
 
 /**
+ * Renders realistic device frames (iPhone 16 Pro, MacBook Pro, Safari Browser).
+ */
+export function drawDeviceMockup(
+  ctx: CanvasRenderingContext2D,
+  type: MockupType,
+  width: number,
+  height: number,
+) {
+  if (!type || type === "none") return;
+
+  ctx.save();
+
+  if (type === "iphone") {
+    // iPhone 16 Pro Titanium Bezel Frame
+    const bezel = 12;
+    const outerW = width + bezel * 2;
+    const outerH = height + bezel * 2;
+    const radius = Math.min(36, width * 0.12);
+
+    ctx.strokeStyle = "#27272a";
+    ctx.lineWidth = bezel;
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-outerW / 2, -outerH / 2, outerW, outerH, radius);
+      ctx.stroke();
+    }
+
+    // Dynamic Island Pill
+    const pillW = Math.min(88, width * 0.3);
+    const pillH = 20;
+    ctx.fillStyle = "#000000";
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-pillW / 2, -height / 2 + 6, pillW, pillH, 10);
+      ctx.fill();
+    }
+  } else if (type === "macbook") {
+    // MacBook Display Bezel & Notch
+    const bezel = 14;
+    ctx.strokeStyle = "#18181b";
+    ctx.lineWidth = bezel;
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-width / 2 - bezel / 2, -height / 2 - bezel / 2, width + bezel, height + bezel, 10);
+      ctx.stroke();
+    }
+    // Camera Notch
+    ctx.fillStyle = "#09090b";
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-24, -height / 2, 48, 12, [0, 0, 4, 4]);
+      ctx.fill();
+    }
+    // Aluminum Base Chin
+    const baseW = width * 1.15;
+    const baseH = 12;
+    ctx.fillStyle = "#27272a";
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-baseW / 2, height / 2 + bezel / 2, baseW, baseH, [0, 0, 6, 6]);
+      ctx.fill();
+    }
+  } else if (type === "safari") {
+    // Modern Browser Header
+    const barH = 34;
+    ctx.fillStyle = "#1e2025";
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-width / 2, -height / 2 - barH, width, barH, [8, 8, 0, 0]);
+      ctx.fill();
+    }
+    // Window control buttons (Red, Yellow, Green)
+    const btnY = -height / 2 - barH / 2;
+    const startX = -width / 2 + 16;
+    const colors = ["#ff5f56", "#ffbd2e", "#27c93f"];
+    colors.forEach((col, idx) => {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(startX + idx * 16, btnY, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // Address Bar Pill
+    const searchW = Math.min(220, width * 0.45);
+    ctx.fillStyle = "#121417";
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-searchW / 2, btnY - 9, searchW, 18, 5);
+      ctx.fill();
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
  * Render a single Layer entity to a 2D canvas context.
  */
 export function drawLayer(
   ctx: CanvasRenderingContext2D,
   layer: Layer,
   requestRedraw?: () => void,
+  lighting?: SceneLighting,
 ) {
   if (!layer.visible || layer.opacity <= 0) return;
 
@@ -285,6 +389,8 @@ export function drawLayer(
   ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
 
   const { x, y, width, height, rotation } = layer.transform;
+  const rotateX = layer.transform.rotateX ?? 0;
+  const rotateY = layer.transform.rotateY ?? 0;
   const centerX = x + width / 2;
   const centerY = y + height / 2;
 
@@ -292,6 +398,30 @@ export function drawLayer(
   ctx.translate(centerX, centerY);
   if (rotation) {
     ctx.rotate((rotation * Math.PI) / 180);
+  }
+
+  // 3D Perspective Tilt & Swivel Matrix
+  if (rotateX !== 0 || rotateY !== 0) {
+    const radX = (rotateX * Math.PI) / 180;
+    const radY = (rotateY * Math.PI) / 180;
+    const cosX = Math.cos(radX);
+    const cosY = Math.cos(radY);
+    const skewX = -Math.sin(radY) * 0.16;
+    const skewY = Math.sin(radX) * 0.16;
+    ctx.transform(cosY, skewY, skewX, cosX, 0, 0);
+  }
+
+  // Studio Lighting: Soft contact drop shadow
+  if (lighting && lighting.enabled) {
+    ctx.shadowColor = `rgba(0, 0, 0, ${lighting.shadowOpacity || 0.35})`;
+    ctx.shadowBlur = lighting.shadowBlur || 24;
+    ctx.shadowOffsetX = -(lighting.lightX || -300) * 0.04;
+    ctx.shadowOffsetY = -(lighting.lightY || -450) * 0.04;
+  }
+
+  // Render device mockup background frame if needed
+  if (layer.mockup && layer.mockup !== "none") {
+    drawDeviceMockup(ctx, layer.mockup, width, height);
   }
 
   if (layer.type === "shape" && layer.shape) {
@@ -371,6 +501,20 @@ export function drawLayer(
     }
   }
 
+  // Directional Specular Sheen on tilted surfaces
+  if (lighting && lighting.enabled && (lighting.intensity || 0) > 0.1 && (rotateX !== 0 || rotateY !== 0)) {
+    ctx.save();
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = (lighting.intensity || 0.6) * 0.22;
+    const sheen = ctx.createLinearGradient(-width / 2, -height / 2, width / 2, height / 2);
+    sheen.addColorStop(0, "rgba(255, 255, 255, 0.4)");
+    sheen.addColorStop(0.5, "rgba(255, 255, 255, 0)");
+    sheen.addColorStop(1, "rgba(255, 255, 255, 0.1)");
+    ctx.fillStyle = sheen;
+    ctx.fillRect(-width / 2, -height / 2, width, height);
+    ctx.restore();
+  }
+
   ctx.restore();
 }
 
@@ -378,6 +522,8 @@ export interface RenderSceneFrameOptions {
   width: number;
   height: number;
   bloom?: BloomSettings;
+  lighting?: SceneLighting;
+  optics?: OpticsSettings;
   offscreenBloomCanvas?: HTMLCanvasElement | null;
   backgroundColor?: string;
   sourceCanvas?: HTMLCanvasElement | null;
@@ -386,7 +532,7 @@ export interface RenderSceneFrameOptions {
 /**
  * Pure frame rendering function: draws the entire scene at a specific frame index
  * into the target canvas context, including all animation blocks, camera projection,
- * depth of field blur, and bloom post-processing.
+ * depth-sorted 3D layers, depth of field blur, lighting, and optics post-processing.
  */
 export function renderSceneFrame(
   ctx: CanvasRenderingContext2D,
@@ -398,6 +544,8 @@ export function renderSceneFrame(
     width,
     height,
     bloom,
+    lighting = scene.lighting,
+    optics,
     offscreenBloomCanvas,
     backgroundColor = "#000000",
     sourceCanvas,
@@ -411,13 +559,13 @@ export function renderSceneFrame(
   if (scene && scene.layers) {
     const animationBlocks = scene.animationBlocks || [];
     const currentCamera = sampleCamera(scene.camera, animationBlocks, frame);
-    const cameraCtx: CameraTransform = {
-      camera: currentCamera,
-      canvasWidth: width,
-      canvasHeight: height,
-    };
 
-    for (const layer of scene.layers) {
+    // 3D Depth sorting: back-to-front painter's algorithm
+    const sortedLayers = [...scene.layers].sort(
+      (a, b) => (b.transform.depth ?? 0) - (a.transform.depth ?? 0),
+    );
+
+    for (const layer of sortedLayers) {
       const { effectiveLayer } = getScreenTransform(
         layer,
         animationBlocks,
@@ -437,7 +585,7 @@ export function renderSceneFrame(
         ctx.filter = "none";
       }
 
-      drawLayer(ctx, effectiveLayer);
+      drawLayer(ctx, effectiveLayer, undefined, lighting);
       ctx.filter = "none";
     }
 
@@ -452,6 +600,19 @@ export function renderSceneFrame(
         bloom.blurPx ?? 16,
         bloom.intensity ?? 1.0,
       );
+    }
+
+    // Film-grade optics post-processing passes
+    if (optics && sourceCanvas) {
+      if ((optics.chromaticAberration ?? 0) > 0) {
+        applyChromaticAberration(sourceCanvas, optics.chromaticAberration * 4);
+      }
+      if ((optics.vignette ?? 0) > 0) {
+        applyVignette(sourceCanvas, optics.vignette);
+      }
+      if ((optics.filmGrain ?? 0) > 0) {
+        applyFilmGrain(sourceCanvas, optics.filmGrain);
+      }
     }
   }
 

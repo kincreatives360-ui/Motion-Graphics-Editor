@@ -40,6 +40,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
   const aspectRatio = useEditorStore((s) => s.aspectRatio) || "16:9";
   const projectName = useEditorStore((s) => s.projectName) || "Untitled Project";
   const bloom = useEditorStore((s) => s.bloom);
+  const optics = useEditorStore((s) => s.optics);
 
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],
@@ -157,6 +158,8 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
           width: nativeWidth,
           height: nativeHeight,
           bloom,
+          lighting: activeScene.lighting,
+          optics,
           offscreenBloomCanvas: bloomCanvas,
           backgroundColor: "#000000",
           sourceCanvas: canvas,
@@ -206,6 +209,28 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                 setStatusText(`Capturing frame ${frame} of ${total} (${Math.round(ratio * 100)}%)...`);
               } else {
                 setStatusText(`Encoding GIF in web worker thread (${pct}%)...`);
+              }
+            },
+            signal: abortController.signal,
+          },
+        );
+      } else if (format === "mp4") {
+        setStatusText("Encoding H.264 MP4 with hardware acceleration...");
+        filename = `${safeProjectName}_${outputWidth}x${outputHeight}.mp4`;
+
+        blob = await exportSceneToMp4(
+          renderFrame,
+          canvas,
+          totalFrames,
+          targetFps,
+          {
+            onProgress: (ratio, frame, total, stage) => {
+              const pct = Math.round(ratio * 100);
+              setProgressPercent(pct);
+              if (stage === "rendering") {
+                setStatusText(`Rendering frame ${frame} of ${total} (${pct}%)...`);
+              } else {
+                setStatusText(`Encoding H.264 MP4 (${pct}%)...`);
               }
             },
             signal: abortController.signal,
@@ -344,13 +369,13 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                 >
                   <div className="flex items-center justify-between">
                     <Film size={14} className={format === "mp4" ? "text-[#34d399]" : "text-[#6b7280]"} />
-                    <span className="text-[8px] font-mono uppercase px-1 py-0.5 rounded bg-[#101216] text-[#fbbf24] border border-[#fbbf24]/30">
-                      Choice
+                    <span className="text-[8px] font-mono uppercase px-1 py-0.5 rounded bg-[#101216] text-[#34d399] border border-[#34d399]/30">
+                      GPU Fast
                     </span>
                   </div>
                   <span className="text-[11px] font-semibold leading-none mt-1">MP4</span>
                   <span className="text-[9px] text-[#6b7280] leading-tight">
-                    H.264 options
+                    H.264 WebCodecs
                   </span>
                 </button>
               </div>
@@ -359,18 +384,15 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
             {/* MP4 Choice Callout */}
             {format === "mp4" && (
               <div
-                className="bg-[#181b22] border border-[#f59e0b]/40 rounded p-3 text-[10px] space-y-1.5"
+                className="bg-[#12201b] border border-[#10b981]/40 rounded p-3 text-[10px] space-y-1.5"
                 data-testid="mp4-decision-note"
               >
-                <div className="flex items-center gap-1.5 text-[#fbbf24] font-medium">
-                  <Info size={12} />
-                  <span>MP4 Architecture Decision</span>
+                <div className="flex items-center gap-1.5 text-[#34d399] font-medium">
+                  <Film size={12} />
+                  <span>Hardware-Accelerated WebCodecs (H.264 + mp4-muxer)</span>
                 </div>
                 <p className="text-[#a1a1aa] leading-relaxed">
-                  True MP4 requires either a client-side <strong className="text-[#e4e4e7]">ffmpeg.wasm</strong> transcode pass or a server-side transcode pass via <strong className="text-[#e4e4e7]">artifacts/api-server</strong> (endpoint stubbed at <code className="text-[#38bdf8]">/api/export/mp4</code>).
-                </p>
-                <p className="text-[#71717a]">
-                  Please choose <strong>WebM</strong> or <strong>GIF</strong> for instant offline export, or let us know which MP4 architecture you prefer!
+                  Encodes directly on your GPU using native browser <strong className="text-[#34d399]">WebCodecs VideoEncoder</strong> and <strong className="text-[#34d399]">mp4-muxer</strong> with automatic FFmpeg WASM fallback. Artifact-free 1080p and 4K exports.
                 </p>
               </div>
             )}
@@ -382,6 +404,20 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                   <Settings2 size={11} /> Resolution:
                 </span>
                 <div className="flex items-center gap-1" role="radiogroup" aria-labelledby="resolution-label">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={resolutionScale === 2}
+                    aria-label={`4K Ultra HD resolution, ${nativeWidth * 2} by ${nativeHeight * 2}`}
+                    onClick={() => setResolutionScale(2)}
+                    className={`px-2 py-0.5 rounded text-[9px] font-medium transition-colors ${
+                      resolutionScale === 2
+                        ? "bg-[#38bdf8] text-black font-semibold"
+                        : "bg-[#21242c] text-[#9ca3af] hover:text-white"
+                    }`}
+                  >
+                    4K UHD ({nativeWidth * 2}×{nativeHeight * 2})
+                  </button>
                   <button
                     type="button"
                     role="radio"

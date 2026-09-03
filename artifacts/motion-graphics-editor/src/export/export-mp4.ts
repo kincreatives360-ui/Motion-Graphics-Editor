@@ -1,5 +1,6 @@
 import { FFmpeg } from "@ffmpeg/ffmpeg";
 import { fetchFile, toBlobURL } from "@ffmpeg/util";
+import { Muxer, ArrayBufferTarget } from "mp4-muxer";
 import { exportSceneToWebm } from "./export-webm";
 
 export interface ExportMp4Options {
@@ -10,6 +11,99 @@ export interface ExportMp4Options {
     stage?: "rendering" | "encoding",
   ) => void;
   signal?: AbortSignal;
+}
+
+/**
+ * High-performance hardware-accelerated H.264 MP4 export using browser WebCodecs
+ * and mp4-muxer. Directly passes Canvas VideoFrames into GPU encoder with zero
+ * CPU transcode overhead.
+ */
+export async function exportSceneToWebCodecsMp4(
+  renderFrame: (frame: number) => void,
+  canvas: HTMLCanvasElement,
+  totalFrames: number,
+  fps: number,
+  options?: ExportMp4Options,
+): Promise<Blob> {
+  const { onProgress, signal } = options || {};
+
+  if (typeof window === "undefined" || !(window as any).VideoEncoder) {
+    throw new Error("WebCodecs VideoEncoder is not available in this browser");
+  }
+
+  // Dimensions must be even integers for H.264
+  const width = canvas.width % 2 === 0 ? canvas.width : canvas.width - 1;
+  const height = canvas.height % 2 === 0 ? canvas.height : canvas.height - 1;
+
+  const target = new ArrayBufferTarget();
+  const muxer = new Muxer({
+    target,
+    video: {
+      codec: "avc",
+      width,
+      height,
+    },
+    fastStart: "in-memory",
+    firstTimestampBehavior: "offset",
+  });
+
+  let encoderError: any = null;
+  const encoder = new (window as any).VideoEncoder({
+    output: (chunk: any, meta: any) => {
+      muxer.addVideoChunk(chunk, meta);
+    },
+    error: (e: any) => {
+      encoderError = e;
+    },
+  });
+
+  // Calculate target bitrate based on resolution and frame rate
+  const bitrate = Math.max(3_000_000, Math.round(width * height * fps * 0.18));
+
+  // Configure H.264 baseline/high profile
+  await encoder.configure({
+    codec: "avc1.640028", // H.264 High Profile Level 4.0
+    width,
+    height,
+    bitrate,
+    framerate: fps,
+  });
+
+  const frameDurationUs = Math.round(1_000_000 / fps);
+
+  for (let f = 0; f < totalFrames; f++) {
+    if (signal?.aborted) {
+      encoder.close();
+      throw new DOMException("MP4 export was cancelled", "AbortError");
+    }
+    if (encoderError) {
+      throw encoderError;
+    }
+
+    renderFrame(f);
+
+    const videoFrame = new (window as any).VideoFrame(canvas, {
+      timestamp: f * frameDurationUs,
+      duration: frameDurationUs,
+    });
+
+    const isKeyframe = f % (fps * 2) === 0;
+    encoder.encode(videoFrame, { keyFrame: isKeyframe });
+    videoFrame.close();
+
+    onProgress?.((f + 1) / totalFrames, f + 1, totalFrames, "encoding");
+
+    // Breathe event loop so UI stays responsive
+    if (f % 6 === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+
+  await encoder.flush();
+  encoder.close();
+  muxer.finalize();
+
+  return new Blob([target.buffer], { type: "video/mp4" });
 }
 
 /**
@@ -215,6 +309,23 @@ export async function exportSceneToMp4(
 ): Promise<Blob> {
   const { onProgress, signal } = options || {};
 
+  // 1. Fast Path: Hardware-accelerated GPU WebCodecs + mp4-muxer
+  if (typeof window !== "undefined" && (window as any).VideoEncoder) {
+    try {
+      return await exportSceneToWebCodecsMp4(
+        renderFrame,
+        canvas,
+        totalFrames,
+        fps,
+        options,
+      );
+    } catch (err: any) {
+      if (err.name === "AbortError") throw err;
+      console.warn("WebCodecs export failed, falling back to FFmpeg WASM:", err);
+    }
+  }
+
+  // 2. High-fidelity Fallback: WebM render + ffmpeg.wasm transcode
   // Phase 1: Render frames to WebM (0% - 50% overall progress)
   const webmBlob = await exportSceneToWebm(
     renderFrame,

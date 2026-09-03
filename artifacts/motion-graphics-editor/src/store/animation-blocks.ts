@@ -9,7 +9,10 @@ export type BlockPreset =
   | "slide-in-down"
   | "scale-in"
   | "scale-out"
-  | "camera-move";
+  | "camera-move"
+  | "camera-orbit"
+  | "typewriter"
+  | "tilt-in";
 
 export type AnimatableProperty =
   | "x"
@@ -17,6 +20,9 @@ export type AnimatableProperty =
   | "width"
   | "height"
   | "rotation"
+  | "rotateX"
+  | "rotateY"
+  | "depth"
   | "opacity"
   | "fill"
   | "stroke"
@@ -620,16 +626,48 @@ export function projectLayer(
   ctx: CameraTransform,
 ): { x: number; y: number; scale: number } {
   const f = focalLength(ctx.camera.fov, ctx.canvasHeight);
-  const relDepth = (layer.transform.depth ?? 0) - ctx.camera.z;
-  // Physically correct perspective: at depth=0 & camera.z=0, distance=f => scale=1.0.
-  // Camera push-in (camera.z > 0) or negative depth reduces distance, scaling up.
-  // Clamp distance to minimum 5% of focal length to prevent divide-by-zero or inversion.
-  const distance = Math.max(f * 0.05, f + relDepth);
-  const scale = f / distance;
   const cx = ctx.canvasWidth / 2;
   const cy = ctx.canvasHeight / 2;
-  const x = cx + (layer.transform.x - ctx.camera.x - cx) * scale;
-  const y = cy + (layer.transform.y - ctx.camera.y - cy) * scale;
+
+  const dx = layer.transform.x - ctx.camera.x - cx;
+  const dy = layer.transform.y - ctx.camera.y - cy;
+  const relDepth = (layer.transform.depth ?? 0) - ctx.camera.z;
+
+  const pitch = ctx.camera.pitch ?? 0;
+  const yaw = ctx.camera.yaw ?? 0;
+  const roll = ctx.camera.roll ?? 0;
+
+  // Optimized fast path when camera has no 3D rotation
+  if (pitch === 0 && yaw === 0 && roll === 0) {
+    const distance = Math.max(f * 0.05, f + relDepth);
+    const scale = f / distance;
+    const x = cx + dx * scale;
+    const y = cy + dy * scale;
+    return { x, y, scale };
+  }
+
+  // Convert degrees to radians for 3D extrinsic camera rotation
+  const radYaw = (yaw * Math.PI) / 180;
+  const radPitch = (pitch * Math.PI) / 180;
+  const radRoll = (roll * Math.PI) / 180;
+
+  // 1. Rotate around Y axis (Yaw)
+  const dx1 = dx * Math.cos(radYaw) - relDepth * Math.sin(radYaw);
+  const dz1 = dx * Math.sin(radYaw) + relDepth * Math.cos(radYaw);
+
+  // 2. Rotate around X axis (Pitch)
+  const dy2 = dy * Math.cos(radPitch) - dz1 * Math.sin(radPitch);
+  const dz2 = dy * Math.sin(radPitch) + dz1 * Math.cos(radPitch);
+
+  // 3. Rotate around Z axis (Roll)
+  const dx3 = dx1 * Math.cos(radRoll) - dy2 * Math.sin(radRoll);
+  const dy3 = dx1 * Math.sin(radRoll) + dy2 * Math.cos(radRoll);
+
+  const distance = Math.max(f * 0.05, f + dz2);
+  const scale = f / distance;
+  const x = cx + dx3 * scale;
+  const y = cy + dy3 * scale;
+
   return { x, y, scale };
 }
 
@@ -639,7 +677,7 @@ export function sampleCamera(
   frame: number,
 ): Camera {
   const cameraBlocks = blocks
-    .filter((b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || b.layerId === null))
+    .filter((b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || (b.preset as string) === "camera-orbit" || b.layerId === null))
     .slice()
     .sort((a, b) => a.startFrame - b.startFrame);
 
@@ -647,8 +685,14 @@ export function sampleCamera(
     x: baseCamera?.x ?? 0,
     y: baseCamera?.y ?? 0,
     z: baseCamera?.z ?? 0,
+    pitch: baseCamera?.pitch ?? 0,
+    yaw: baseCamera?.yaw ?? 0,
+    roll: baseCamera?.roll ?? 0,
     fov: baseCamera?.fov ?? 60,
+    focalLengthMm: baseCamera?.focalLengthMm ?? 50,
+    apertureFStop: baseCamera?.apertureFStop ?? 2.8,
     focusDistance: baseCamera?.focusDistance ?? 1000,
+    target: baseCamera?.target ?? { x: 960, y: 540, z: 0 },
   };
 
   for (const block of cameraBlocks) {
@@ -658,6 +702,10 @@ export function sampleCamera(
     const dy = block.cameraTo.y ?? 0;
     const dz = block.cameraTo.z ?? 0;
     const dfov = block.cameraTo.fov ?? 0;
+    const dpitch = (block.cameraTo as any).pitch ?? 0;
+    const dyaw = (block.cameraTo as any).yaw ?? 0;
+    const droll = (block.cameraTo as any).roll ?? 0;
+    const dfocus = (block.cameraTo as any).focusDistance ?? 0;
 
     const duration = Math.max(1, block.endFrame - block.startFrame);
 
@@ -667,12 +715,20 @@ export function sampleCamera(
       currentCamera.x += dx * eased;
       currentCamera.y += dy * eased;
       currentCamera.z += dz * eased;
+      currentCamera.pitch = (currentCamera.pitch ?? 0) + dpitch * eased;
+      currentCamera.yaw = (currentCamera.yaw ?? 0) + dyaw * eased;
+      currentCamera.roll = (currentCamera.roll ?? 0) + droll * eased;
       currentCamera.fov += dfov * eased;
+      currentCamera.focusDistance += dfocus * eased;
     } else if (frame > block.endFrame) {
       currentCamera.x += dx;
       currentCamera.y += dy;
       currentCamera.z += dz;
+      currentCamera.pitch = (currentCamera.pitch ?? 0) + dpitch;
+      currentCamera.yaw = (currentCamera.yaw ?? 0) + dyaw;
+      currentCamera.roll = (currentCamera.roll ?? 0) + droll;
       currentCamera.fov += dfov;
+      currentCamera.focusDistance += dfocus;
     }
   }
 
@@ -682,11 +738,14 @@ export function sampleCamera(
 
 /**
  * Depth of field helper: blurs each layer proportionally to its distance from camera.focusDistance
+ * Scaled by lens aperture F-stop (f/1.4 = deep cinematic bokeh, f/11 = sharp deep focus)
  */
-export function dofBlurPx(layer: Layer, camera: Camera, maxBlur = 12): number {
+export function dofBlurPx(layer: Layer, camera: Camera, maxBlur = 14): number {
   const layerDepth = layer.transform.depth ?? 0;
   const focusDist = camera.focusDistance ?? 1000;
   const distanceFromFocus = Math.abs(layerDepth - focusDist);
-  return clamp(distanceFromFocus / 40, 0, maxBlur);
+  const fStop = camera.apertureFStop || 2.8;
+  const apertureFactor = 2.8 / fStop;
+  return clamp((distanceFromFocus / 38) * apertureFactor, 0, maxBlur);
 }
 

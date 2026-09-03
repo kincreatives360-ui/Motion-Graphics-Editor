@@ -1,6 +1,6 @@
 {
   "name": "Motion Graphics Editor",
-  "description": "A web-based motion graphics and canvas animation editor.",
+  "description": "Professional 3D motion graphics studio featuring 6DOF camera kinematics, studio lighting, depth of field, device mockups, film-grade optics, and hardware-accelerated MP4 export.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

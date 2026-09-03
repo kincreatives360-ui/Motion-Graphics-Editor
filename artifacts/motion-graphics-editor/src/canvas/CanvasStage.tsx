@@ -29,7 +29,12 @@ import {
   focalLength,
   type CameraTransform,
 } from "../store/animation-blocks";
-import { applyBloom } from "./post-processing";
+import {
+  applyBloom,
+  applyFilmGrain,
+  applyVignette,
+  applyChromaticAberration,
+} from "./post-processing";
 import {
   drawLayer,
   getCachedImage,
@@ -204,6 +209,7 @@ export function CanvasStage() {
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
   const aspectRatio = useEditorStore((s) => s.aspectRatio) || "16:9";
   const bloom = useEditorStore((s) => s.bloom);
+  const optics = useEditorStore((s) => s.optics);
   const updateCamera = useEditorStore((s) => s.updateCamera);
 
   const [containerSize, setContainerSize] = useState({ width: 1200, height: 700 });
@@ -407,7 +413,12 @@ export function CanvasStage() {
         canvasHeight: nativeHeight,
       };
 
-      for (const layer of activeScene.layers) {
+      // 3D Depth sorting: back-to-front painter's algorithm
+      const sortedLayers = [...activeScene.layers].sort(
+        (a, b) => (b.transform.depth ?? 0) - (a.transform.depth ?? 0),
+      );
+
+      for (const layer of sortedLayers) {
         const { effectiveLayer } = getScreenTransform(
           layer,
           animationBlocks,
@@ -427,7 +438,7 @@ export function CanvasStage() {
           ctx.filter = "none";
         }
 
-        drawLayer(ctx, effectiveLayer, () => draw());
+        drawLayer(ctx, effectiveLayer, () => draw(), activeScene.lighting);
         ctx.filter = "none";
       }
 
@@ -443,6 +454,19 @@ export function CanvasStage() {
           bloom.blurPx ?? 16,
           bloom.intensity ?? 1.0,
         );
+      }
+
+      // Film-grade optics post-processing passes
+      if (optics && canvas) {
+        if ((optics.chromaticAberration ?? 0) > 0) {
+          applyChromaticAberration(canvas, optics.chromaticAberration * 4);
+        }
+        if ((optics.vignette ?? 0) > 0) {
+          applyVignette(canvas, optics.vignette);
+        }
+        if ((optics.filmGrain ?? 0) > 0) {
+          applyFilmGrain(canvas, optics.filmGrain);
+        }
       }
     }
 
@@ -1496,15 +1520,22 @@ export function CanvasStage() {
           return (
             <div
               key={layer.id}
+              className="selection-bounding-box"
               style={{
                 position: "absolute",
                 left: `${screen.x * scaleFactor}px`,
                 top: `${screen.y * scaleFactor}px`,
                 width: `${screen.width * scaleFactor}px`,
                 height: `${screen.height * scaleFactor}px`,
-                transform: `rotate(${screen.rotation}deg)`,
+                transform: `perspective(800px) rotate(${screen.rotation}deg) rotateX(${layer.transform.rotateX || 0}deg) rotateY(${layer.transform.rotateY || 0}deg)`,
+                transformStyle: "preserve-3d",
                 transformOrigin: "center center",
                 border: "1px dashed #38bdf8",
+                borderRadius: "0px",
+                background: "transparent",
+                backgroundColor: "transparent",
+                backdropFilter: "none",
+                boxShadow: "none",
                 pointerEvents: "none",
                 boxSizing: "border-box",
               }}
@@ -1529,19 +1560,36 @@ export function CanvasStage() {
           );
           return (
             <div
+              id="selection-bounding-box"
+              className="selection-bounding-box"
               style={{
                 position: "absolute",
                 left: `${screen.x * scaleFactor}px`,
                 top: `${screen.y * scaleFactor}px`,
                 width: `${screen.width * scaleFactor}px`,
                 height: `${screen.height * scaleFactor}px`,
-                transform: `rotate(${screen.rotation}deg)`,
+                transform: `perspective(800px) rotate(${screen.rotation}deg) rotateX(${selectedLayer.transform.rotateX || 0}deg) rotateY(${selectedLayer.transform.rotateY || 0}deg)`,
+                transformStyle: "preserve-3d",
                 transformOrigin: "center center",
                 border: "1.5px solid #38bdf8",
+                borderRadius: "0px",
+                background: "transparent",
+                backgroundColor: "transparent",
+                backdropFilter: "none",
+                boxShadow: "none",
                 pointerEvents: "none",
                 boxSizing: "border-box",
               }}
             >
+              {/* 3D Orientation Indicator Badge */}
+              {((selectedLayer.transform.rotateX ?? 0) !== 0 || (selectedLayer.transform.rotateY ?? 0) !== 0) && (
+                <div
+                  className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-[#0c1319]/90 border border-[#38bdf8]/60 text-[#38bdf8] text-[8px] font-mono px-1.5 py-0.5 rounded shadow-md pointer-events-none whitespace-nowrap"
+                  title="3D Tilt active on layer"
+                >
+                  3D: X {Math.round(selectedLayer.transform.rotateX || 0)}° · Y {Math.round(selectedLayer.transform.rotateY || 0)}°
+                </div>
+              )}
               {/* Rotation Handle Stalk and Knob */}
               <div
                 style={{
