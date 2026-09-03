@@ -52,6 +52,11 @@ export function Timeline() {
   const setPlaying = useEditorUIStore((s) => s.setPlaying);
   const currentFrame = useEditorUIStore((s) => s.currentFrame);
   const setCurrentFrame = useEditorUIStore((s) => s.setCurrentFrame);
+  const isCameraSelected = useEditorUIStore((s) => s.isCameraSelected);
+  const setIsCameraSelected = useEditorUIStore((s) => s.setIsCameraSelected);
+  const activeTool = useEditorUIStore((s) => s.activeTool);
+  const setActiveTool = useEditorUIStore((s) => s.setActiveTool);
+  const isCameraActive = isCameraSelected || activeTool === "camera";
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
   const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
@@ -483,18 +488,19 @@ export function Timeline() {
 
           {/* Zoom Slider Control */}
           <label
-            className="zoom-control flex items-center gap-1.5 text-[8.5px] text-[#6b7280]"
+            className="zoom-control flex items-center gap-1.5 text-[8.5px] text-[#717684] hover:text-[#94a3b8] transition-colors select-none cursor-pointer"
             aria-label="Timeline zoom"
           >
             <span>Zoom</span>
             <input
-              className="timeline-range w-16 accent-[#38bdf8] cursor-pointer"
+              className="timeline-range cursor-pointer"
               type="range"
               min="0"
               max="100"
               value={zoomLevel}
               onChange={(e) => setZoomLevel(e.target.value)}
               data-testid="input-timeline-zoom"
+              title={`Timeline zoom: ${zoomLevel}%`}
             />
           </label>
         </div>
@@ -503,7 +509,7 @@ export function Timeline() {
       {/* Timeline Main Split Layout: Left Track Headers & Right Timeline Canvas */}
       <div className="timeline-body flex flex-1 min-h-0 relative overflow-hidden bg-[#0c0d0f]">
         {/* Left Track Headers Column */}
-        <div className="w-40 flex-shrink-0 flex flex-col border-r border-[#191b1e] bg-[#111215] z-10">
+        <div className="timeline-headers-sidebar w-40 flex-shrink-0 flex flex-col border-r border-[#191b1e] bg-[#111215] z-10">
           {/* Header ruler placeholder */}
           <div className="h-6 flex items-center px-2.5 border-b border-[#191b1e] bg-[#131518] text-[8.5px] font-medium text-[#64748b] tracking-wider uppercase">
             <span>Layers ({layers.length})</span>
@@ -512,17 +518,21 @@ export function Timeline() {
           {/* Pinned Camera Lane Header */}
           <div
             className={`h-7 px-2 flex items-center justify-between border-b border-[#20252e] text-[9.5px] transition-colors cursor-pointer ${
-              selectedLayerIds.length === 0
-                ? "bg-[#062c26]/70 text-[#34d399] font-medium"
+              isCameraActive
+                ? "bg-[#064e3b]/80 border-l-2 border-l-[#10b981] text-[#34d399] font-medium"
                 : "bg-[#0d151c] hover:bg-[#131d27] text-[#6ee7b7]"
             }`}
             data-testid="timeline-camera-lane-header"
-            onClick={() => selectLayers([])}
-            title="Camera Track: click to view Camera settings"
+            onClick={() => {
+              selectLayers([]);
+              setIsCameraSelected(true);
+              setActiveTool("camera");
+            }}
+            title="Camera Track: click to view Camera settings & Focus control"
           >
             <div className="flex items-center gap-1.5 truncate">
-              <CameraIcon size={11} className="text-[#10b981] flex-shrink-0" />
-              <span className="font-medium text-[#e2e8f0]">Camera</span>
+              <CameraIcon size={11} className={`${isCameraActive ? "text-[#34d399]" : "text-[#10b981]"} flex-shrink-0`} />
+              <span className={`font-medium ${isCameraActive ? "text-[#ecfdf5]" : "text-[#e2e8f0]"}`}>Camera</span>
               {cameraBlocks.length > 0 && (
                 <span className="px-1 py-0.2 rounded-full bg-[#064e3b] text-[#34d399] text-[7.5px] font-mono">
                   {cameraBlocks.length}
@@ -563,6 +573,7 @@ export function Timeline() {
 
           {/* Layer Row Headers */}
           <div
+            id="timeline-headers-container"
             ref={leftHeadersRef}
             onScroll={handleHeadersScroll}
             className="flex-1 overflow-y-auto overflow-x-hidden select-none scrollbar-none"
@@ -759,9 +770,10 @@ export function Timeline() {
 
         {/* Right Scrollable Tracks & Frame Ruler */}
         <div
+          id="timeline-tracks-container"
           ref={scrollContainerRef}
           onScroll={handleTracksScroll}
-          className="flex-1 overflow-x-auto overflow-y-auto relative select-none"
+          className="flex-1 overflow-x-auto overflow-y-auto relative select-none scrollbar-studio"
         >
           <div style={{ width: `${totalWidth}px`, height: "100%" }} className="relative">
             {/* Frame Ruler Header */}
@@ -780,13 +792,13 @@ export function Timeline() {
                 return (
                   <div
                     key={tickFrame}
-                    className="absolute top-0 bottom-0 flex flex-col justify-end"
+                    className="timeline-ruler-tick absolute top-0 bottom-0 flex flex-col justify-end pointer-events-none"
                     style={{ left: `${leftPx}px` }}
                   >
-                    <span className="text-[7.5px] font-mono text-[#52525b] leading-none mb-1 -translate-x-1/2">
+                    <span className="text-[7.5px] font-mono text-[#71717a] font-medium leading-none mb-1 -translate-x-1/2">
                       {formatTimeSecondsOnly(tickFrame)}
                     </span>
-                    <div className="h-1.5 w-[1px] bg-[#3f3f46]" />
+                    <div className="h-1.5 w-[1px] bg-[#52525b]" />
                   </div>
                 );
               })}
@@ -794,9 +806,15 @@ export function Timeline() {
 
             {/* Pinned Camera Lane Track */}
             <div
-              className="h-7 border-b border-[#20252e] bg-[#0c131a]/80 relative cursor-pointer"
+              className={`h-7 border-b border-[#20252e] relative cursor-pointer transition-colors ${
+                isCameraActive ? "bg-[#064e3b]/25" : "bg-[#0c131a]/80"
+              }`}
               data-testid="timeline-camera-lane-track"
-              onClick={() => selectLayers([])}
+              onClick={() => {
+                selectLayers([]);
+                setIsCameraSelected(true);
+                setActiveTool("camera");
+              }}
             >
               {/* Frame grid markings */}
               {Array.from({ length: ticksCount + 1 }).map((_, i) => {
@@ -847,6 +865,8 @@ export function Timeline() {
                     onClick={(e) => {
                       e.stopPropagation();
                       selectLayers([]);
+                      setIsCameraSelected(true);
+                      setActiveTool("camera");
                     }}
                   >
                     {/* Left resize handle */}

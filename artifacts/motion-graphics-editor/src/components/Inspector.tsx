@@ -107,7 +107,6 @@ function getAnimatablePropertiesForLayer(
 }
 
 export function Inspector() {
-  const saveStatus = useEditorUIStore((state) => state.saveStatus);
   const projectName = useEditorStore((state) => state.projectName);
   const setProjectName = useEditorStore((state) => state.setProjectName);
   const aspectRatio = useEditorStore((state) => state.aspectRatio);
@@ -136,6 +135,8 @@ export function Inspector() {
   const updateBloom = useEditorStore((state) => state.updateBloom);
   const openPresets = useEditorUIStore((state) => state.openPresets);
   const setExportModalOpen = useEditorUIStore((state) => state.setExportModalOpen);
+  const setIsCameraSelected = useEditorUIStore((state) => state.setIsCameraSelected);
+  const setActiveTool = useEditorUIStore((state) => state.setActiveTool);
 
   const [savingBlockPreset, setSavingBlockPreset] = useState<AnimationBlock | null>(null);
   const [savingBlockCombo, setSavingBlockCombo] = useState<AnimationBlock[] | null>(null);
@@ -312,7 +313,7 @@ export function Inspector() {
       </div>
 
       {/* Main Inspector Body */}
-      <div className="inspector-body flex-1 overflow-y-auto pb-12">
+      <div className="inspector-body flex-1 overflow-y-auto pb-3">
         {selectedLayerIds.length === 0 ? (
           /* Project Settings View (Nothing Selected) */
           <div data-testid="project-settings-view">
@@ -519,15 +520,27 @@ export function Inspector() {
 
                 {/* Camera (3D Parallax & Projection) Controls */}
                 <div className="section-divider my-3 border-t border-[#202227]" />
-                <div className="flex items-center justify-between mb-2">
+                <div
+                  className="flex items-center justify-between mb-2 cursor-pointer group"
+                  onClick={() => {
+                    setIsCameraSelected(true);
+                    setActiveTool("camera");
+                  }}
+                  title="Click to select Camera and show Camera Focus control"
+                >
                   <div className="flex items-center gap-1.5">
-                    <CameraIcon size={12} className="text-[#34d399]" />
-                    <span className="section-label mb-0 text-[#e2e8f0]">Camera (3D Parallax)</span>
+                    <CameraIcon size={12} className="text-[#34d399] group-hover:scale-110 transition-transform" />
+                    <span className="section-label mb-0 text-[#e2e8f0] group-hover:text-[#34d399] transition-colors">Camera (3D Parallax)</span>
                   </div>
                   <button
                     type="button"
                     className="text-[8px] text-[#6b7280] hover:text-[#94a3b8] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#1a1d24]"
-                    onClick={() => updateCamera({ x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 })}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsCameraSelected(true);
+                      setActiveTool("camera");
+                      updateCamera({ x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 });
+                    }}
                     title="Reset camera coordinates"
                   >
                     <RotateCcw size={9} />
@@ -1431,7 +1444,7 @@ export function Inspector() {
                 {/* Header Action to Add Animation Block */}
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#202227]">
                   <div className="flex items-center gap-1.5">
-                    <span className="section-label mb-0">
+                    <span className="section-label mb-0 inspector-effects-label font-medium text-[#94a3b8] tracking-wide">
                       Effects ({layerBlocks.length})
                     </span>
                     {layerBlocks.length > 0 && (
@@ -1454,9 +1467,9 @@ export function Inspector() {
                       data-testid="button-animate-open-presets"
                       title="Open Presets Library"
                       onClick={() => openPresets("animations")}
-                      className="py-1 px-2 text-[9px] font-medium bg-[#1d1f24] hover:bg-[#252830] text-[#cfd3dc] rounded border border-[#2d313b] inline-flex items-center gap-1 shadow-sm transition-colors"
+                      className="inspector-animate-presets-btn py-1 px-2 text-[9px] font-medium bg-[#1d1f24] hover:bg-[#252830] text-[#cfd3dc] rounded border border-[#2d313b] inline-flex items-center gap-1 shadow-sm transition-colors"
                     >
-                      <SlidersHorizontal size={10} strokeWidth={1.8} />
+                      <SlidersHorizontal size={10} strokeWidth={1.8} className="inspector-presets-icon text-[#94a3b8]" />
                       <span>Presets</span>
                     </button>
 
@@ -1917,52 +1930,6 @@ export function Inspector() {
             </div>
           </div>
         )}
-      </div>
-
-      {/* Inspector Footer with Persistence Indicator */}
-      <div className="inspector-footer flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <IconButton
-            label="Presets"
-            testId="button-open-presets"
-            onClick={() => {
-              openPresets();
-            }}
-          >
-            <SlidersHorizontal size={12} strokeWidth={1.7} />
-          </IconButton>
-          <span
-            data-testid="status-local-save"
-            className="text-[9px] text-[#718096] flex items-center gap-1 select-none font-medium"
-            title={
-              saveStatus === "saving"
-                ? "Saving to local database..."
-                : "Document saved locally"
-            }
-          >
-            {saveStatus === "saving" ? (
-              <>
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span>Saving…</span>
-              </>
-            ) : (
-              <>
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
-                <span>Saved</span>
-              </>
-            )}
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
-          <button
-            className="help-button"
-            type="button"
-            aria-label="Help"
-            data-testid="button-help"
-          >
-            <Sparkles size={11} strokeWidth={1.7} />
-          </button>
-        </div>
       </div>
       {shared && (
         <div

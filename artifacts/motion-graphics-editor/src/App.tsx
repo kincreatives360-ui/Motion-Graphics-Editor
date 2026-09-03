@@ -11,8 +11,10 @@ import {
   Search,
   Share2,
   SlidersHorizontal,
+  Sparkles,
   SunMedium,
   TextCursorInput,
+  Camera as CameraIcon,
   ZoomIn,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toaster";
@@ -62,10 +64,12 @@ function LeftPanel() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const addLayer = useEditorStore((state) => state.addLayer);
+  const openPresets = useEditorUIStore((state) => state.openPresets);
+  const saveStatus = useEditorUIStore((state) => state.saveStatus);
 
   return (
-    <aside className="left-panel" aria-label="Project files and assets">
-      <div className="topbar">
+    <aside className="left-panel flex flex-col h-full overflow-hidden select-none" aria-label="Project files and assets">
+      <div className="topbar flex-shrink-0">
         <button className="project-select" type="button" data-testid="button-project-menu" title="Project menu">
           <span>Canvas</span>
           <ChevronDown size={11} strokeWidth={1.8} />
@@ -78,7 +82,7 @@ function LeftPanel() {
           <Plus size={14} strokeWidth={1.7} />
         </IconButton>
       </div>
-      <div className="asset-tabs" role="tablist" aria-label="Project navigator">
+      <div className="asset-tabs flex-shrink-0" role="tablist" aria-label="Project navigator">
         <button
           className={`asset-tab ${tab === "File" ? "active" : ""}`}
           type="button"
@@ -112,7 +116,7 @@ function LeftPanel() {
         </IconButton>
       </div>
       {searchOpen && (
-        <div style={{ padding: "7px 8px 0" }}>
+        <div style={{ padding: "7px 8px 0" }} className="flex-shrink-0">
           <input
             autoFocus
             className="text-input"
@@ -124,11 +128,62 @@ function LeftPanel() {
           />
         </div>
       )}
-      {tab === "File" ? (
-        <LayerTree />
-      ) : (
-        <AssetsPanel searchQuery={searchOpen ? searchQuery : ""} />
-      )}
+      <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+        {tab === "File" ? (
+          <LayerTree />
+        ) : (
+          <AssetsPanel searchQuery={searchOpen ? searchQuery : ""} />
+        )}
+      </div>
+
+      {/* Moved Bottom Toolbar: Presets, Persistence Status & Help */}
+      <div
+        id="left-panel-footer"
+        className="left-panel-footer flex items-center justify-between px-2 py-1.5 border-t border-[#1b1c1f] bg-[#111215] text-[#8c8f96] select-none text-[9px] flex-shrink-0"
+      >
+        <div className="flex items-center gap-1.5">
+          <IconButton
+            label="Presets"
+            testId="button-open-presets"
+            onClick={() => openPresets()}
+            className="w-5 h-5 flex items-center justify-center rounded hover:bg-[#1d2026] hover:text-[#e2e8f0] text-[#8c8f96] transition-colors"
+          >
+            <SlidersHorizontal size={11} strokeWidth={1.7} />
+          </IconButton>
+          <span
+            data-testid="status-local-save"
+            className="text-[9px] text-[#718096] flex items-center gap-1 select-none font-medium"
+            title={
+              saveStatus === "saving"
+                ? "Saving to local database..."
+                : "Document saved locally"
+            }
+          >
+            {saveStatus === "saving" ? (
+              <>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-[#a0aec0]">Saving…</span>
+              </>
+            ) : (
+              <>
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500/80" />
+                <span>Saved</span>
+              </>
+            )}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            className="help-button w-5 h-5 flex items-center justify-center rounded hover:bg-[#1d2026] hover:text-[#e2e8f0] text-[#718096] transition-colors"
+            type="button"
+            aria-label="Help"
+            data-testid="button-help"
+            title="Help & Shortcuts"
+          >
+            <Sparkles size={11} strokeWidth={1.7} />
+          </button>
+        </div>
+      </div>
     </aside>
   );
 }
@@ -180,6 +235,7 @@ function Stage() {
   const otherTools: Array<{ id: ToolId; label: string; icon: React.ReactNode }> = [
     { id: "shape", label: "Add shape", icon: <SunMedium size={13} strokeWidth={1.6} /> },
     { id: "text", label: "Add text", icon: <TextCursorInput size={13} strokeWidth={1.6} /> },
+    { id: "camera", label: "Camera (3D & Focus)", icon: <CameraIcon size={13} strokeWidth={1.6} /> },
   ];
 
   return (

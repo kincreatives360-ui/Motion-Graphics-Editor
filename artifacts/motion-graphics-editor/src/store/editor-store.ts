@@ -112,7 +112,8 @@ export type ToolId =
   | "shape"
   | "text"
   | "node"
-  | "grid";
+  | "grid"
+  | "camera";
 export type BackgroundMode = "Color" | "Image" | "Shader";
 
 export interface EditorStoreState extends EditorDocument {
@@ -184,6 +185,8 @@ export interface EditorUIStoreState {
   playing: boolean;
   currentFrame: number;
   activeTool: ToolId;
+  isCameraSelected: boolean;
+  setIsCameraSelected: (selected: boolean) => void;
   presetsOpen: boolean;
   presetsTab: "animations" | "templates";
   exportModalOpen: boolean;
@@ -943,6 +946,12 @@ export const useEditorStore = create<EditorStoreState>()(
       },
 
       selectLayers: (ids) => {
+        if (ids.length > 0) {
+          useEditorUIStore.getState().setIsCameraSelected(false);
+          if (useEditorUIStore.getState().activeTool === "camera") {
+            useEditorUIStore.getState().setActiveTool("scene");
+          }
+        }
         set({ selectedLayerIds: ids });
       },
 
@@ -1338,9 +1347,17 @@ export const useEditorUIStore = create<EditorUIStoreState>()((set) => ({
   playing: false,
   currentFrame: 0,
   activeTool: "scene",
+  isCameraSelected: false,
   presetsOpen: false,
   presetsTab: "animations",
   exportModalOpen: false,
+
+  setIsCameraSelected: (selected) => {
+    set({ isCameraSelected: selected });
+    if (selected) {
+      useEditorStore.getState().selectLayers([]);
+    }
+  },
 
   setSaveStatus: (status) => {
     set({ saveStatus: status });
@@ -1382,7 +1399,13 @@ export const useEditorUIStore = create<EditorUIStoreState>()((set) => ({
   },
 
   setActiveTool: (tool) => {
-    set({ activeTool: tool });
+    set({
+      activeTool: tool,
+      isCameraSelected: tool === "camera",
+    });
+    if (tool === "camera") {
+      useEditorStore.getState().selectLayers([]);
+    }
   },
 
   openPresets: (tab) => {

@@ -191,6 +191,8 @@ export function CanvasStage() {
   const setPan = useEditorUIStore((s) => s.setPan);
   const activeTool = useEditorUIStore((s) => s.activeTool);
   const setActiveTool = useEditorUIStore((s) => s.setActiveTool);
+  const isCameraSelected = useEditorUIStore((s) => s.isCameraSelected);
+  const isCameraActive = isCameraSelected || activeTool === "camera";
   const playing = useEditorUIStore((s) => s.playing);
   const currentFrame = useEditorUIStore((s) => s.currentFrame);
   const setCurrentFrame = useEditorUIStore((s) => s.setCurrentFrame);
@@ -1415,6 +1417,8 @@ export function CanvasStage() {
             ? "move"
             : activeTool === "scissors"
             ? "crosshair"
+            : activeTool === "camera"
+            ? "crosshair"
             : activeTool === "text"
             ? "text"
             : activeTool === "shape"
@@ -1665,18 +1669,20 @@ export function CanvasStage() {
           );
         })()}
 
-        {/* Interactive Canvas Focus Pill */}
-        <div
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-15 flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0d1217]/95 border border-[#10b981]/60 shadow-xl text-[9px] font-mono select-none backdrop-blur-xs cursor-ew-resize hover:bg-[#131d24] hover:border-[#34d399] transition-all group"
-          title="Click and drag horizontally to shift Camera Focus Distance"
-          data-testid="canvas-focus-pill"
-          onPointerDown={handleFocusPillPointerDown}
-        >
-          <Crosshair size={11} className="text-[#34d399] group-hover:rotate-90 transition-transform duration-300" />
-          <span className="text-[#94a3b8] font-sans">Focus:</span>
-          <span className="text-[#34d399] font-bold">{Math.round(activeScene?.camera?.focusDistance ?? 1000)}px</span>
-          <span className="text-[7.5px] text-[#6ee7b7]/70 hidden sm:inline">(drag ↔)</span>
-        </div>
+        {/* Interactive Canvas Focus Pill - ONLY appears when Camera is clicked/active */}
+        {isCameraActive && (
+          <div
+            className="canvas-focus-pill absolute bottom-3 left-1/2 -translate-x-1/2 z-15 flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0d1217]/95 border border-[#10b981]/70 shadow-[0_4px_20px_rgba(0,0,0,0.6)] text-[9px] font-mono select-none backdrop-blur-xs cursor-ew-resize hover:bg-[#131d24] hover:border-[#34d399] transition-all group animate-in fade-in zoom-in-95 duration-150"
+            title="Click and drag horizontally to shift Camera Focus Distance"
+            data-testid="canvas-focus-pill"
+            onPointerDown={handleFocusPillPointerDown}
+          >
+            <Crosshair size={11} className="text-[#34d399] group-hover:rotate-90 transition-transform duration-300 flex-shrink-0" />
+            <span className="text-[#94a3b8] font-sans font-medium">Camera Focus:</span>
+            <span className="text-[#34d399] font-bold">{Math.round(activeScene?.camera?.focusDistance ?? 1000)}px</span>
+            <span className="text-[7.5px] text-[#6ee7b7]/70 hidden sm:inline">(drag ↔)</span>
+          </div>
+        )}
       </div>
 
       {/* Dev-Only FPS and Pipeline Performance Counter */}
