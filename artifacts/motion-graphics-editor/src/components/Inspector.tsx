@@ -28,6 +28,9 @@ import {
   Box,
 } from "lucide-react";
 import { SaveAnimationPresetModal } from "./SavePresetModals";
+import { SceneEffectsPanel } from "./SceneEffectsPanel";
+import { LayerEffectsPanel } from "./LayerEffectsPanel";
+import { AudioEffectsPanel } from "./AudioEffectsPanel";
 import { useEditorStore, useEditorUIStore, type Layer, type BackgroundMode } from "../store/editor-store";
 import {
   type AnimationBlock,
@@ -822,80 +825,9 @@ export function Inspector() {
                   </div>
                 )}
 
-                {/* Film-Grade Optics Section */}
+                {/* Scene Effects Section */}
                 <div className="section-divider my-2.5 border-t border-[#202227]" />
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-1.5">
-                    <Sparkles size={12} className="text-[#38bdf8]" />
-                    <span className="section-label mb-0 text-[#d8d9dc]">Film Optics & Imperfections</span>
-                  </div>
-                  <button
-                    type="button"
-                    className="text-[8.5px] text-[#81838a] hover:text-[#d8d9dc] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#1f2127]"
-                    onClick={() => updateOptics({ filmGrain: 0, vignette: 0, chromaticAberration: 0 })}
-                    title="Reset optics to defaults"
-                  >
-                    <RotateCcw size={9} />
-                    <span>Reset</span>
-                  </button>
-                </div>
-
-                <div className="space-y-2.5 p-2 bg-[#16181c] border border-[#26282e] rounded mb-3 shadow-xs">
-                  {/* Film Grain */}
-                  <div>
-                    <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
-                      <span className="text-[#999ba0]">35mm Film Grain</span>
-                      <span className="font-mono text-[9px] text-[#d8d9dc]">{Math.round((optics.filmGrain ?? 0) * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="0.4"
-                      step="0.01"
-                      className="inspector-slider w-full"
-                      value={optics.filmGrain ?? 0}
-                      onChange={(e) => updateOptics({ filmGrain: parseFloat(e.target.value) })}
-                    />
-                  </div>
-
-                  {/* Vignette */}
-                  <div>
-                    <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
-                      <span className="text-[#999ba0]">Lens Vignette</span>
-                      <span className="font-mono text-[9px] text-[#d8d9dc]">{Math.round((optics.vignette ?? 0) * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      className="inspector-slider w-full"
-                      value={optics.vignette ?? 0}
-                      onChange={(e) => updateOptics({ vignette: parseFloat(e.target.value) })}
-                    />
-                  </div>
-
-                  {/* Chromatic Aberration */}
-                  <div>
-                    <div className="flex items-center justify-between text-[8.5px] text-[#81838a] mb-1">
-                      <span className="text-[#999ba0]">Chromatic Aberration</span>
-                      <span className="font-mono text-[9px] text-[#d8d9dc]">
-                        {Math.round((optics.chromaticAberration ?? 0) * 100)}%
-                      </span>
-                    </div>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.05"
-                      className="inspector-slider w-full"
-                      value={optics.chromaticAberration ?? 0}
-                      onChange={(e) =>
-                        updateOptics({ chromaticAberration: parseFloat(e.target.value) })
-                      }
-                    />
-                  </div>
-                </div>
+                <SceneEffectsPanel />
               </TabsContent>
 
               {/* ANIMATE TAB: Camera Move Blocks */}
@@ -1361,6 +1293,10 @@ export function Inspector() {
                   </div>
                 </div>
 
+                {/* Layer Effects Section */}
+                <div className="section-divider my-2.5 border-t border-[#202227]" />
+                <LayerEffectsPanel layer={selectedLayer} />
+
                 {/* TYPE-SPECIFIC SECTIONS */}
 
                 {/* 1. SHAPE LAYER */}
@@ -1727,14 +1663,13 @@ export function Inspector() {
                           className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
                           onClick={() => {
                             const start = Math.max(0, currentFrame);
-                            addAnimationBlock({
+                            addAnimationBlock(activeSceneId, {
                               layerId: selectedLayer.id,
                               name: "Pop & Rise",
                               preset: "fade-in",
                               startFrame: start,
-                              durationFrames: 24,
+                              endFrame: start + 24,
                               easing: "spring",
-                              deltaY: -20,
                             });
                           }}
                         >
@@ -1745,14 +1680,13 @@ export function Inspector() {
                           className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
                           onClick={() => {
                             const start = Math.max(0, currentFrame);
-                            addAnimationBlock({
+                            addAnimationBlock(activeSceneId, {
                               layerId: selectedLayer.id,
                               name: "Punch Scale",
                               preset: "scale-spring",
                               startFrame: start,
-                              durationFrames: 30,
+                              endFrame: start + 30,
                               easing: "spring",
-                              scaleTo: 1.0,
                             });
                           }}
                         >
@@ -1763,14 +1697,13 @@ export function Inspector() {
                           className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
                           onClick={() => {
                             const start = Math.max(0, currentFrame);
-                            addAnimationBlock({
+                            addAnimationBlock(activeSceneId, {
                               layerId: selectedLayer.id,
                               name: "Kinetic Slide",
                               preset: "slide-left",
                               startFrame: start,
-                              durationFrames: 25,
+                              endFrame: start + 25,
                               easing: "spring",
-                              deltaX: 80,
                             });
                           }}
                         >
@@ -2002,7 +1935,7 @@ export function Inspector() {
                                     } else if (kfTrack.property === "opacity") {
                                       defaultVal = selectedLayer.opacity ?? 1;
                                     } else if (kfTrack.property === "rotation") {
-                                      defaultVal = selectedLayer.rotation ?? 0;
+                                      defaultVal = selectedLayer.transform.rotation ?? 0;
                                     } else if (kfTrack.property in selectedLayer) {
                                       defaultVal = (selectedLayer as any)[kfTrack.property] ?? 0;
                                     }
@@ -2161,9 +2094,9 @@ export function Inspector() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <span className="px-1.5 py-0.5 rounded bg-[#1e293b] text-[#38bdf8] border border-[#0369a1]/40 font-mono text-[8.5px] font-medium capitalize">
-                              {typeof block.preset === "string"
-                                ? block.preset.replace(/-/g, " ")
-                                : (block.preset as any)?.label || (block.preset as any)?.id || "effect"}
+                              {typeof (block as any).preset === "string"
+                                ? (block as any).preset.replace(/-/g, " ")
+                                : (block as any).preset?.label || (block as any).preset?.id || "effect"}
                             </span>
                           </div>
                           <div className="flex items-center gap-1">

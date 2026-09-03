@@ -40,7 +40,8 @@ export interface Keyframe<T = number | string> {
 export interface KeyframeTrackBlock {
   id: string;
   kind: "keyframe";
-  layerId: string;
+  layerId: string | null;
+  name?: string;
   property: AnimatableProperty;
   keyframes: Keyframe<number | string>[];
   startFrame: number;
@@ -48,18 +49,20 @@ export interface KeyframeTrackBlock {
   preset?: string;
   easing?: KeyframeEasing;
   customCurve?: [number, number, number, number];
+  cameraTo?: Partial<Camera>;
 }
 
 export interface PresetAnimationBlock {
   id: string;
   kind?: "preset";
   layerId: string | null; // null = camera block
+  name?: string;
   preset: BlockPreset;
   startFrame: number;
   endFrame: number;
   easing: "linear" | "ease-in-out" | "spring" | "custom";
   customCurve?: [number, number, number, number]; // cubic-bezier control points [x1, y1, x2, y2], only if easing === "custom"
-  cameraTo?: Partial<{ x: number; y: number; z: number; fov: number }>;
+  cameraTo?: Partial<Camera>;
 }
 
 export type AnimationBlock = PresetAnimationBlock | KeyframeTrackBlock;
@@ -362,7 +365,7 @@ export function sampleBlock(
 ): SampledLayerDelta {
   const duration = Math.max(1, block.endFrame - block.startFrame);
   const t = clamp((frame - block.startFrame) / duration, 0, 1);
-  const eased = applyEasing(t, block.easing, block.customCurve);
+  const eased = applyEasing(t, (block.easing || "linear") as any, block.customCurve);
 
   const presetId =
     typeof block.preset === "string"
@@ -740,12 +743,12 @@ export function sampleCamera(
  * Depth of field helper: blurs each layer proportionally to its distance from camera.focusDistance
  * Scaled by lens aperture F-stop (f/1.4 = deep cinematic bokeh, f/11 = sharp deep focus)
  */
-export function dofBlurPx(layer: Layer, camera: Camera, maxBlur = 14): number {
+export function dofBlurPx(layer: Layer, camera: Camera, maxBlur = 12): number {
   const layerDepth = layer.transform.depth ?? 0;
   const focusDist = camera.focusDistance ?? 1000;
   const distanceFromFocus = Math.abs(layerDepth - focusDist);
   const fStop = camera.apertureFStop || 2.8;
   const apertureFactor = 2.8 / fStop;
-  return clamp((distanceFromFocus / 38) * apertureFactor, 0, maxBlur);
+  return clamp((distanceFromFocus / 40) * apertureFactor, 0, maxBlur);
 }
 

@@ -34,6 +34,7 @@ import {
   applyFilmGrain,
   applyVignette,
   applyChromaticAberration,
+  applySceneEffectsPipeline,
 } from "./post-processing";
 import {
   drawLayer,
@@ -442,30 +443,37 @@ export function CanvasStage() {
         ctx.filter = "none";
       }
 
-      // Bloom post-processing pass over full canvas
-      if (bloom?.enabled && canvas) {
-        if (!offscreenCanvasRef.current) {
-          offscreenCanvasRef.current = document.createElement("canvas");
-        }
-        applyBloom(
-          canvas,
-          offscreenCanvasRef.current,
-          bloom.threshold ?? 200,
-          bloom.blurPx ?? 16,
-          bloom.intensity ?? 1.0,
-        );
-      }
-
-      // Film-grade optics post-processing passes
-      if (optics && canvas) {
-        if ((optics.chromaticAberration ?? 0) > 0) {
-          applyChromaticAberration(canvas, optics.chromaticAberration * 4);
-        }
-        if ((optics.vignette ?? 0) > 0) {
-          applyVignette(canvas, optics.vignette);
-        }
-        if ((optics.filmGrain ?? 0) > 0) {
-          applyFilmGrain(canvas, optics.filmGrain);
+      // Scene Effects Post-Processing Pipeline
+      if (canvas && offscreenCanvasRef.current) {
+        if (activeScene?.sceneEffects) {
+          applySceneEffectsPipeline(
+            canvas,
+            offscreenCanvasRef.current,
+            activeScene.sceneEffects,
+            currentFrame,
+          );
+        } else {
+          // Legacy fallbacks for bloom & optics
+          if (bloom?.enabled) {
+            applyBloom(
+              canvas,
+              offscreenCanvasRef.current,
+              bloom.threshold ?? 200,
+              bloom.blurPx ?? 16,
+              bloom.intensity ?? 1.0,
+            );
+          }
+          if (optics) {
+            if ((optics.chromaticAberration ?? 0) > 0) {
+              applyChromaticAberration(canvas, optics.chromaticAberration * 4);
+            }
+            if ((optics.vignette ?? 0) > 0) {
+              applyVignette(canvas, optics.vignette);
+            }
+            if ((optics.filmGrain ?? 0) > 0) {
+              applyFilmGrain(canvas, optics.filmGrain);
+            }
+          }
         }
       }
     }

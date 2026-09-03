@@ -12,6 +12,7 @@ import {
   applyFilmGrain,
   applyVignette,
   applyChromaticAberration,
+  applySceneEffectsPipeline,
 } from "./post-processing";
 
 export interface ScreenTransformResult {
@@ -342,7 +343,26 @@ export function drawDeviceMockup(
       ctx.roundRect(-baseW / 2, height / 2 + bezel / 2, baseW, baseH, [0, 0, 6, 6]);
       ctx.fill();
     }
-  } else if (type === "safari") {
+  } else if ((type as string) === "ipad") {
+    // iPad Ultra Thin Uniform Bezel Frame
+    const bezel = 10;
+    const outerW = width + bezel * 2;
+    const outerH = height + bezel * 2;
+    const radius = Math.min(24, width * 0.08);
+
+    ctx.strokeStyle = "#18181b";
+    ctx.lineWidth = bezel;
+    if (typeof ctx.roundRect === "function") {
+      ctx.beginPath();
+      ctx.roundRect(-outerW / 2, -outerH / 2, outerW, outerH, radius);
+      ctx.stroke();
+    }
+    // Front Camera Lens Dot
+    ctx.fillStyle = "#09090b";
+    ctx.beginPath();
+    ctx.arc(0, -height / 2 - bezel / 2, 3, 0, Math.PI * 2);
+    ctx.fill();
+  } else if ((type as string) === "safari" || (type as string) === "browser") {
     // Modern Browser Header
     const barH = 34;
     ctx.fillStyle = "#1e2025";
@@ -396,6 +416,24 @@ export function drawLayer(
 
   // Move origin to center of layer for rotation
   ctx.translate(centerX, centerY);
+
+  // Directional Mask Sweep Reveal Wipe
+  if ((layer as any).maskSweep) {
+    const sweep = (layer as any).maskSweep;
+    const progress = sweep.progress ?? 1.0;
+    const dir = sweep.direction || "left";
+    ctx.beginPath();
+    if (dir === "left") {
+      ctx.rect(-width / 2, -height / 2, width * progress, height);
+    } else if (dir === "right") {
+      ctx.rect(width / 2 - width * progress, -height / 2, width * progress, height);
+    } else if (dir === "up") {
+      ctx.rect(-width / 2, -height / 2, width, height * progress);
+    } else {
+      ctx.rect(-width / 2, height / 2 - height * progress, width, height * progress);
+    }
+    ctx.clip();
+  }
   if (rotation) {
     ctx.rotate((rotation * Math.PI) / 180);
   }
@@ -419,15 +457,26 @@ export function drawLayer(
     ctx.shadowOffsetY = -(lighting.lightY || -450) * 0.04;
   }
 
-  // Render device mockup background frame if needed
-  if (layer.mockup && layer.mockup !== "none") {
-    drawDeviceMockup(ctx, layer.mockup, width, height);
+  // 3D Extrusion Depth side walls
+  if ((layer.depth ?? 0) > 0) {
+    const depthPx = Math.min(60, (layer.depth ?? 0) * 0.5);
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+    for (let d = depthPx; d > 0; d--) {
+      ctx.fillRect(-width / 2 + d * 0.3, -height / 2 + d * 0.3, width, height);
+    }
+    ctx.restore();
   }
 
   if (layer.type === "shape" && layer.shape) {
     const { kind, fill, stroke } = layer.shape;
     const radius = (layer.shape as any).radius || 0;
     const pathData = layer.shape.path;
+    const strokeAlign = (layer as any).strokeAlign || (layer.shape as any).align || "inside";
+    const strokeWidth = (layer.shape as any).strokeWidth || layer.shape.strokeWidth || 2;
+    const isDashed = (layer as any).strokeStyle === "dashed" || (layer.shape as any).style === "dashed";
+    const dashVal = (layer as any).dash || (layer.shape as any).dash || 8;
+    const flowVal = (layer as any).flow || (layer.shape as any).flow || 0;
 
     if (pathData) {
       try {
@@ -444,14 +493,20 @@ export function drawLayer(
         }
         if (stroke && stroke !== "transparent") {
           ctx.strokeStyle = stroke;
-          ctx.lineWidth = (layer.shape as any).strokeWidth || 2;
+          ctx.lineWidth = strokeAlign === "center" ? strokeWidth : strokeWidth * 2;
+          if (isDashed) {
+            ctx.setLineDash([dashVal, dashVal]);
+            ctx.lineDashOffset = -flowVal;
+          }
           ctx.stroke(path2d);
+          ctx.setLineDash([]);
         }
         ctx.restore();
       } catch {
         // Path2D fallback
       }
     } else {
+      ctx.save();
       ctx.beginPath();
       if (kind === "ellipse") {
         ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
@@ -469,9 +524,22 @@ export function drawLayer(
       }
       if (stroke && stroke !== "transparent") {
         ctx.strokeStyle = stroke;
-        ctx.lineWidth = (layer.shape as any).strokeWidth || 2;
-        ctx.stroke();
+        ctx.lineWidth = strokeAlign === "center" ? strokeWidth : strokeWidth * 2;
+        if (isDashed) {
+          ctx.setLineDash([dashVal, dashVal]);
+          ctx.lineDashOffset = -flowVal;
+        }
+        if (strokeAlign === "inside") {
+          ctx.save();
+          ctx.clip();
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
       }
+      ctx.restore();
     }
   } else if (layer.type === "text" && layer.text) {
     const {
@@ -499,6 +567,31 @@ export function drawLayer(
     if (img) {
       ctx.drawImage(img, -width / 2, -height / 2, width, height);
     }
+  }
+
+  // 3D Material Surface Finish Overlay (Metal, Glossy, Clay, Matte)
+  if (layer.material && layer.material !== "matte") {
+    ctx.save();
+    const strength = layer.materialStrength ?? 1.0;
+    if (layer.material === "metal") {
+      ctx.globalCompositeOperation = "color-dodge";
+      ctx.globalAlpha = 0.35 * strength;
+      const metalGrad = ctx.createLinearGradient(-width / 2, -height / 2, width / 2, height / 2);
+      metalGrad.addColorStop(0, "rgba(255,255,255,0.8)");
+      metalGrad.addColorStop(0.5, "rgba(100,100,100,0.2)");
+      metalGrad.addColorStop(1, "rgba(255,255,255,0.6)");
+      ctx.fillStyle = metalGrad;
+      ctx.fillRect(-width / 2, -height / 2, width, height);
+    } else if (layer.material === "glossy") {
+      ctx.globalCompositeOperation = "screen";
+      ctx.globalAlpha = 0.25 * strength;
+      const glossGrad = ctx.createLinearGradient(0, -height / 2, 0, 0);
+      glossGrad.addColorStop(0, "rgba(255,255,255,0.7)");
+      glossGrad.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = glossGrad;
+      ctx.fillRect(-width / 2, -height / 2, width, height / 2);
+    }
+    ctx.restore();
   }
 
   // Directional Specular Sheen on tilted surfaces
@@ -589,29 +682,35 @@ export function renderSceneFrame(
       ctx.filter = "none";
     }
 
-    // Bloom post-processing pass over full canvas
-    if (bloom?.enabled && sourceCanvas) {
-      const bloomCanvas =
-        offscreenBloomCanvas || document.createElement("canvas");
-      applyBloom(
-        sourceCanvas,
-        bloomCanvas,
-        bloom.threshold ?? 200,
-        bloom.blurPx ?? 16,
-        bloom.intensity ?? 1.0,
-      );
-    }
+    // Scene Post-Processing Pipeline
+    if (scene.sceneEffects && sourceCanvas) {
+      const bloomCanvas = offscreenBloomCanvas || document.createElement("canvas");
+      applySceneEffectsPipeline(sourceCanvas, bloomCanvas, scene.sceneEffects, frame);
+    } else {
+      // Legacy Fallback: Bloom post-processing pass over full canvas
+      if (bloom?.enabled && sourceCanvas) {
+        const bloomCanvas =
+          offscreenBloomCanvas || document.createElement("canvas");
+        applyBloom(
+          sourceCanvas,
+          bloomCanvas,
+          bloom.threshold ?? 200,
+          bloom.blurPx ?? 16,
+          bloom.intensity ?? 1.0,
+        );
+      }
 
-    // Film-grade optics post-processing passes
-    if (optics && sourceCanvas) {
-      if ((optics.chromaticAberration ?? 0) > 0) {
-        applyChromaticAberration(sourceCanvas, optics.chromaticAberration * 4);
-      }
-      if ((optics.vignette ?? 0) > 0) {
-        applyVignette(sourceCanvas, optics.vignette);
-      }
-      if ((optics.filmGrain ?? 0) > 0) {
-        applyFilmGrain(sourceCanvas, optics.filmGrain);
+      // Film-grade optics post-processing passes
+      if (optics && sourceCanvas) {
+        if ((optics.chromaticAberration ?? 0) > 0) {
+          applyChromaticAberration(sourceCanvas, optics.chromaticAberration * 4);
+        }
+        if ((optics.vignette ?? 0) > 0) {
+          applyVignette(sourceCanvas, optics.vignette);
+        }
+        if ((optics.filmGrain ?? 0) > 0) {
+          applyFilmGrain(sourceCanvas, optics.filmGrain);
+        }
       }
     }
   }
