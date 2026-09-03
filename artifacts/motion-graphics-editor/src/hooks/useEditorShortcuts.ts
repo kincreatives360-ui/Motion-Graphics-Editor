@@ -1,6 +1,7 @@
 import { useEffect } from "react";
-import { useEditorStore } from "../store/editor-store";
+import { useEditorStore, useEditorUIStore } from "../store/editor-store";
 import type { Layer } from "../store/editor-store";
+import { isSvgContent, parseSvgToLayers, importImageFile } from "../lib/svg-importer";
 
 // Session-level in-memory clipboard for layers
 let inMemoryClipboard: Layer[] = [];
@@ -19,6 +20,72 @@ function isEditableTarget(target: EventTarget | null): boolean {
 
 export function useEditorShortcuts() {
   useEffect(() => {
+    let lastPasteTimestamp = 0;
+
+    const tryPasteSvgOrImage = async (clipboardData?: DataTransfer | null): Promise<boolean> => {
+      // 1. Check DataTransfer if available (synchronous and highest fidelity)
+      if (clipboardData) {
+        const text =
+          clipboardData.getData("text/plain") ||
+          clipboardData.getData("image/svg+xml") ||
+          "";
+
+        if (text && isSvgContent(text)) {
+          const parsed = parseSvgToLayers(text);
+          if (parsed && parsed.layers.length > 0) {
+            useEditorStore.getState().addImportedLayers(parsed.layers, [parsed.groupId]);
+            return true;
+          }
+        }
+
+        // Try image files from clipboard
+        if (clipboardData.files && clipboardData.files.length > 0) {
+          const file = clipboardData.files[0];
+          if (file.type.startsWith("image/") || file.name.endsWith(".svg")) {
+            await importImageFile(file);
+            return true;
+          }
+        }
+      }
+
+      // 2. Fall back to navigator.clipboard.readText() if available
+      try {
+        if (navigator.clipboard && typeof navigator.clipboard.readText === "function") {
+          const text = await navigator.clipboard.readText();
+          if (text && isSvgContent(text)) {
+            const parsed = parseSvgToLayers(text);
+            if (parsed && parsed.layers.length > 0) {
+              useEditorStore.getState().addImportedLayers(parsed.layers, [parsed.groupId]);
+              return true;
+            }
+          }
+        }
+      } catch {
+        // Clipboard read permission might not be granted in sandbox
+      }
+
+      return false;
+    };
+
+    const handlePaste = async (e: ClipboardEvent) => {
+      if (isEditableTarget(e.target)) return;
+      const now = Date.now();
+      if (now - lastPasteTimestamp < 300) return;
+
+      const handledSvg = await tryPasteSvgOrImage(e.clipboardData);
+      if (handledSvg) {
+        e.preventDefault();
+        lastPasteTimestamp = Date.now();
+        return;
+      }
+
+      if (inMemoryClipboard.length > 0) {
+        e.preventDefault();
+        lastPasteTimestamp = Date.now();
+        useEditorStore.getState().pasteLayers(inMemoryClipboard);
+      }
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (isEditableTarget(e.target)) {
         return;
@@ -89,9 +156,20 @@ export function useEditorShortcuts() {
 
       // Paste (Cmd/Ctrl + V)
       if (isCmdOrCtrl && (key === "v" || key === "V")) {
-        if (inMemoryClipboard.length === 0) return;
         e.preventDefault();
-        store.pasteLayers(inMemoryClipboard);
+        const now = Date.now();
+        if (now - lastPasteTimestamp < 300) return;
+        lastPasteTimestamp = now;
+
+        (async () => {
+          const handledSvg = await tryPasteSvgOrImage(null);
+          if (!handledSvg) {
+            // Fall through to in-app layer clipboard
+            if (inMemoryClipboard.length > 0) {
+              store.pasteLayers(inMemoryClipboard);
+            }
+          }
+        })();
         return;
       }
 
@@ -123,11 +201,34 @@ export function useEditorShortcuts() {
         store.nudgeSelectedLayers(dx, dy);
         return;
       }
+
+      // Tool Switching Shortcuts (Select: V, Hand: H, Tilt: Y, Move: G, Scissors: C)
+      if (!isCmdOrCtrl && !e.altKey && !e.shiftKey) {
+        const uiStore = useEditorUIStore.getState();
+        if (key === "v" || key === "V") {
+          e.preventDefault();
+          uiStore.setActiveTool("scene");
+        } else if (key === "h" || key === "H") {
+          e.preventDefault();
+          uiStore.setActiveTool("hand");
+        } else if (key === "y" || key === "Y") {
+          e.preventDefault();
+          uiStore.setActiveTool("tilt");
+        } else if (key === "g" || key === "G") {
+          e.preventDefault();
+          uiStore.setActiveTool("move");
+        } else if (key === "c" || key === "C") {
+          e.preventDefault();
+          uiStore.setActiveTool("scissors");
+        }
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("paste", handlePaste);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("paste", handlePaste);
     };
   }, []);
 }

@@ -5,15 +5,32 @@ import {
   Circle,
   Type,
   Image as ImageIcon,
+  Spline,
   Eye,
   EyeOff,
   Lock,
   Unlock,
   ChevronRight,
   ChevronDown,
+  Sparkles,
+  LayoutTemplate,
+  Copy,
+  FolderPlus,
+  Trash2,
 } from "lucide-react";
 import { useEditorStore } from "../store/editor-store";
 import type { Layer } from "../store/editor-store";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import {
+  SaveSceneTemplateModal,
+  SaveAnimationPresetModal,
+} from "./SavePresetModals";
 
 interface FlattenedLayerItem {
   layer: Layer;
@@ -35,10 +52,14 @@ function getFlattenedTree(layers: Layer[]): FlattenedLayerItem[] {
   }
 
   const result: FlattenedLayerItem[] = [];
+  const visitedTraversal = new Set<string>();
 
   function traverse(parentId: string | null, depth: number) {
+    if (depth > 64) return;
     const children = childrenMap.get(parentId) || [];
     for (const child of children) {
+      if (visitedTraversal.has(child.id)) continue;
+      visitedTraversal.add(child.id);
       result.push({ layer: child, depth });
       if (child.type === "group") {
         traverse(child.id, depth + 1);
@@ -49,9 +70,8 @@ function getFlattenedTree(layers: Layer[]): FlattenedLayerItem[] {
   traverse(null, 0);
 
   // If there are any unvisited layers (safety fallback), include them
-  const visited = new Set(result.map((r) => r.layer.id));
   for (const l of layers) {
-    if (!visited.has(l.id)) {
+    if (!visitedTraversal.has(l.id)) {
       result.push({ layer: l, depth: 0 });
     }
   }
@@ -62,7 +82,10 @@ function getFlattenedTree(layers: Layer[]): FlattenedLayerItem[] {
 function isDescendant(layers: Layer[], potentialParentId: string, layerId: string): boolean {
   const map = new Map(layers.map((l) => [l.id, l]));
   let current = map.get(potentialParentId);
+  const visited = new Set<string>();
   while (current) {
+    if (visited.has(current.id)) return false;
+    visited.add(current.id);
     if (current.id === layerId) return true;
     current = current.parentId ? map.get(current.parentId) : undefined;
   }
@@ -79,6 +102,9 @@ export function LayerTree() {
   const toggleLayerLock = useEditorStore((state) => state.toggleLayerLock);
   const reparentLayer = useEditorStore((state) => state.reparentLayer);
   const reorderLayers = useEditorStore((state) => state.reorderLayers);
+  const groupSelectedLayers = useEditorStore((state) => state.groupSelectedLayers);
+  const duplicateSelectedLayers = useEditorStore((state) => state.duplicateSelectedLayers);
+  const removeLayers = useEditorStore((state) => state.removeLayers);
 
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId),
@@ -86,12 +112,29 @@ export function LayerTree() {
   );
 
   const layers = activeScene?.layers || [];
+  const animationBlocks = activeScene?.animationBlocks || [];
   const flattenedList = useMemo(() => getFlattenedTree(layers), [layers]);
 
   const [lastClickedId, setLastClickedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Modals for saving user presets
+  const [saveTemplateModalOpen, setSaveTemplateModalOpen] = useState(false);
+  const [saveAnimModalOpen, setSaveAnimModalOpen] = useState(false);
+
+  // Selected layers objects
+  const selectedLayers = useMemo(
+    () => layers.filter((l) => selectedLayerIds.includes(l.id)),
+    [layers, selectedLayerIds],
+  );
+
+  // Animation blocks belonging to selected layers
+  const selectedLayerBlocks = useMemo(
+    () => animationBlocks.filter((b) => b.layerId && selectedLayerIds.includes(b.layerId)),
+    [animationBlocks, selectedLayerIds],
+  );
 
   // Drag-and-drop state
   const [draggedLayerId, setDraggedLayerId] = useState<string | null>(null);
@@ -261,6 +304,9 @@ export function LayerTree() {
         if (layer.shape?.kind === "ellipse") {
           return <Circle size={11} className="layer-type-icon" />;
         }
+        if (layer.shape?.kind === "path" || layer.shape?.path) {
+          return <Spline size={11} className="layer-type-icon text-[#38bdf8]" />;
+        }
         return <Square size={11} className="layer-type-icon" />;
       case "text":
         return <Type size={11} className="layer-type-icon" />;
@@ -273,94 +319,216 @@ export function LayerTree() {
 
   return (
     <div
-      className="layer-tree-container"
+      className="layer-tree-container flex flex-col h-full"
       data-testid="layer-tree"
       onDragOver={(e) => e.preventDefault()}
       onDragEnd={handleDragEnd}
     >
-      {flattenedList.map(({ layer, depth }, index) => {
-        const isSelected = selectedLayerIds.includes(layer.id);
-        const isEditing = editingId === layer.id;
-        const isDragTarget = dropTarget?.targetLayerId === layer.id;
-
-        return (
-          <div
-            key={layer.id}
-            className={`layer-tree-row ${isSelected ? "selected" : ""} ${
-              isDragTarget ? `drop-${dropTarget.position}` : ""
-            } ${!layer.visible ? "is-hidden" : ""} ${layer.locked ? "is-locked" : ""}`}
-            style={{ paddingLeft: `${8 + depth * 14}px` }}
-            data-testid={`layer-row-${layer.id}`}
-            draggable={!isEditing}
-            onClick={(e) => handleRowClick(e, layer, index)}
-            onDoubleClick={(e) => handleDoubleClick(e, layer)}
-            onDragStart={(e) => handleDragStart(e, layer)}
-            onDragOver={(e) => handleDragOver(e, layer)}
-            onDragLeave={handleDragLeave}
-            onDrop={(e) => handleDrop(e, layer)}
-          >
-            {/* Depth line or branch indicator */}
-            {depth > 0 && <span className="layer-indent-guide" style={{ left: `${depth * 14}px` }} />}
-
-            {/* Type Icon */}
-            <span className="layer-icon-wrapper">{getLayerIcon(layer)}</span>
-
-            {/* Layer Name / Inline Input */}
-            <div className="layer-name-cell">
-              {isEditing ? (
-                <input
-                  ref={inputRef}
-                  className="layer-rename-input"
-                  data-testid={`layer-rename-input-${layer.id}`}
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  onBlur={commitRename}
-                  onKeyDown={handleKeyDown}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              ) : (
-                <span
-                  className="layer-name-text"
-                  data-testid={`layer-name-${layer.id}`}
-                  title={`${layer.name} (Double-click to rename)`}
-                >
-                  {layer.name}
-                </span>
-              )}
-            </div>
-
-            {/* Actions: Visibility & Lock */}
-            <div className="layer-row-actions">
-              <button
-                type="button"
-                className={`layer-action-btn ${!layer.visible ? "active-dim" : ""}`}
-                data-testid={`button-toggle-visibility-${layer.id}`}
-                title={layer.visible ? "Hide layer" : "Show layer"}
-                aria-label={layer.visible ? "Hide layer" : "Show layer"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleLayerVisibility(layer.id);
-                }}
-              >
-                {layer.visible ? <Eye size={11} strokeWidth={1.5} /> : <EyeOff size={11} strokeWidth={1.5} />}
-              </button>
-              <button
-                type="button"
-                className={`layer-action-btn ${layer.locked ? "active-dim" : ""}`}
-                data-testid={`button-toggle-lock-${layer.id}`}
-                title={layer.locked ? "Unlock layer" : "Lock layer"}
-                aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleLayerLock(layer.id);
-                }}
-              >
-                {layer.locked ? <Lock size={11} strokeWidth={1.5} /> : <Unlock size={11} strokeWidth={1.5} />}
-              </button>
-            </div>
+      {/* Selection Action Bar */}
+      {selectedLayerIds.length > 0 && (
+        <div
+          className="flex items-center justify-between px-2 py-1 bg-[#16181f] border-b border-[#242732] text-[9.5px]"
+          data-testid="layer-tree-selection-bar"
+        >
+          <span className="text-[#8c919d] font-medium">
+            {selectedLayerIds.length} selected
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              data-testid="button-save-selection-preset"
+              title="Save selected layers and animations as a reusable preset template"
+              onClick={() => setSaveTemplateModalOpen(true)}
+              className="px-1.5 py-0.5 rounded bg-[#0284c7]/20 hover:bg-[#0284c7]/30 text-[#38bdf8] border border-[#0284c7]/40 flex items-center gap-1 text-[8.5px] font-medium transition-colors"
+            >
+              <LayoutTemplate size={9} strokeWidth={2} />
+              <span>Save as Preset</span>
+            </button>
           </div>
-        );
-      })}
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto">
+        {flattenedList.map(({ layer, depth }, index) => {
+          const isSelected = selectedLayerIds.includes(layer.id);
+          const isEditing = editingId === layer.id;
+          const isDragTarget = dropTarget?.targetLayerId === layer.id;
+          const layerHasAnimations = animationBlocks.some((b) => b.layerId === layer.id);
+
+          return (
+            <ContextMenu key={layer.id}>
+              <ContextMenuTrigger asChild>
+                <div
+                  className={`layer-tree-row ${isSelected ? "selected" : ""} ${
+                    isDragTarget ? `drop-${dropTarget.position}` : ""
+                  } ${!layer.visible ? "is-hidden" : ""} ${layer.locked ? "is-locked" : ""}`}
+                  style={{ paddingLeft: `${8 + depth * 14}px` }}
+                  data-testid={`layer-row-${layer.id}`}
+                  draggable={!isEditing}
+                  onClick={(e) => handleRowClick(e, layer, index)}
+                  onDoubleClick={(e) => handleDoubleClick(e, layer)}
+                  onDragStart={(e) => handleDragStart(e, layer)}
+                  onDragOver={(e) => handleDragOver(e, layer)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, layer)}
+                  onContextMenu={() => {
+                    if (!isSelected) {
+                      selectLayers([layer.id]);
+                    }
+                  }}
+                >
+                  {/* Depth line or branch indicator */}
+                  {depth > 0 && (
+                    <span className="layer-indent-guide" style={{ left: `${depth * 14}px` }} />
+                  )}
+
+                  {/* Type Icon */}
+                  <span className="layer-icon-wrapper">{getLayerIcon(layer)}</span>
+
+                  {/* Layer Name / Inline Input */}
+                  <div className="layer-name-cell">
+                    {isEditing ? (
+                      <input
+                        ref={inputRef}
+                        className="layer-rename-input"
+                        data-testid={`layer-rename-input-${layer.id}`}
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={handleKeyDown}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    ) : (
+                      <span
+                        className="layer-name-text"
+                        data-testid={`layer-name-${layer.id}`}
+                        title={`${layer.name} (Double-click to rename)`}
+                      >
+                        {layer.name}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Actions: Visibility & Lock */}
+                  <div className="layer-row-actions">
+                    <button
+                      type="button"
+                      className={`layer-action-btn ${!layer.visible ? "active-dim" : ""}`}
+                      data-testid={`button-toggle-visibility-${layer.id}`}
+                      title={layer.visible ? "Hide layer" : "Show layer"}
+                      aria-label={layer.visible ? "Hide layer" : "Show layer"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleLayerVisibility(layer.id);
+                      }}
+                    >
+                      {layer.visible ? (
+                        <Eye size={11} strokeWidth={1.5} />
+                      ) : (
+                        <EyeOff size={11} strokeWidth={1.5} />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      className={`layer-action-btn ${layer.locked ? "active-dim" : ""}`}
+                      data-testid={`button-toggle-lock-${layer.id}`}
+                      title={layer.locked ? "Unlock layer" : "Lock layer"}
+                      aria-label={layer.locked ? "Unlock layer" : "Lock layer"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleLayerLock(layer.id);
+                      }}
+                    >
+                      {layer.locked ? (
+                        <Lock size={11} strokeWidth={1.5} />
+                      ) : (
+                        <Unlock size={11} strokeWidth={1.5} />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </ContextMenuTrigger>
+
+              <ContextMenuContent
+                className="bg-[#181a20] border-[#292d37] text-[#cfd3dc] text-[9.5px] min-w-[170px]"
+                data-testid={`context-menu-layer-${layer.id}`}
+              >
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1.5 flex items-center gap-1.5 text-white"
+                  onClick={() => setSaveTemplateModalOpen(true)}
+                  data-testid="context-menu-save-scene-template"
+                >
+                  <LayoutTemplate size={11} className="text-[#38bdf8]" />
+                  <span>Save as preset template...</span>
+                </ContextMenuItem>
+
+                {layerHasAnimations && (
+                  <ContextMenuItem
+                    className="cursor-pointer hover:bg-[#222631] px-2 py-1.5 flex items-center gap-1.5 text-[#c4b5fd]"
+                    onClick={() => setSaveAnimModalOpen(true)}
+                    data-testid="context-menu-save-anim-preset"
+                  >
+                    <Sparkles size={11} className="text-[#a78bfa]" />
+                    <span>Save animation preset...</span>
+                  </ContextMenuItem>
+                )}
+
+                <ContextMenuSeparator className="bg-[#262a34]" />
+
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center gap-1.5"
+                  onClick={() => duplicateSelectedLayers()}
+                  data-testid="context-menu-duplicate"
+                >
+                  <Copy size={11} />
+                  <span>Duplicate</span>
+                </ContextMenuItem>
+
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center gap-1.5"
+                  onClick={() => groupSelectedLayers()}
+                  data-testid="context-menu-group"
+                >
+                  <FolderPlus size={11} />
+                  <span>Group selected</span>
+                </ContextMenuItem>
+
+                <ContextMenuSeparator className="bg-[#262a34]" />
+
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center gap-1.5 text-[#f87171]"
+                  onClick={() => removeLayers(selectedLayerIds)}
+                  data-testid="context-menu-delete"
+                >
+                  <Trash2 size={11} />
+                  <span>Delete layer</span>
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          );
+        })}
+      </div>
+
+      {/* Save Scene Template Modal */}
+      <SaveSceneTemplateModal
+        open={saveTemplateModalOpen}
+        onOpenChange={setSaveTemplateModalOpen}
+        layers={selectedLayers.length > 0 ? selectedLayers : layers}
+        animationBlocks={
+          selectedLayers.length > 0 ? selectedLayerBlocks : animationBlocks
+        }
+        camera={activeScene?.camera}
+        durationFrames={activeScene?.durationFrames}
+        fps={activeScene?.fps}
+      />
+
+      {/* Save Animation Preset Modal from Selection */}
+      <SaveAnimationPresetModal
+        open={saveAnimModalOpen}
+        onOpenChange={setSaveAnimModalOpen}
+        blocks={selectedLayerBlocks}
+        defaultName={`${selectedLayers[0]?.name || "Layer"} Animation`}
+      />
     </div>
   );
 }

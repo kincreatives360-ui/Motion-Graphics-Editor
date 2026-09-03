@@ -75,18 +75,63 @@ The editor state is managed by a centralized Zustand store (`artifacts/motion-gr
   - **Undo / Redo (Cmd/Ctrl + Z, Cmd/Ctrl + Shift + Z / Cmd/Ctrl + Y)**: Dispatches temporal undo/redo actions.
   - **Input Guarding**: Automatically ignores editor shortcuts when focus is inside text inputs, textareas, selects, or `contentEditable` elements.
 
-## Canvas Viewport, Alignment & Zoom Engine
+## Inspector Architecture (Design & Animate Tabs)
 
-- **Viewport Centering & Coordinate Precision**:
-  - Removed legacy fixed CSS dimension overrides on `.canvas` in favor of strict pixel-accurate display bounds (`displayW`, `displayH`).
-  - Native canvas resolution buffers (`bufferW = displayW * dpr`, `bufferH = displayH * dpr`) dynamically scale coordinates for high-DPI displays.
-  - Screen-to-canvas coordinate mapping matches `(clientX - rect.left) / scaleFactor` across all zoom levels, pans, and aspect ratios (16:9, 9:16, 1:1).
-- **Zoom Dropdown Menu**:
-  - Floating zoom pill displays active percentage (`ZoomIn` icon, value, `ChevronDown`).
-  - Dropdown options: "Fit Screen (100%)", granular presets (25%, 50%, 75%, 100%, 125%, 150%, 200%, 300%, 400%), step zoom buttons (+25% / -25%), and "Reset Pan".
-  - Dismisses on click-outside and marks active preset with a check indicator.
-- **Scroll-to-Zoom**:
-  - Natural wheel scrolling over the canvas stage dynamically zooms in (scroll up) and out (scroll down) clamped between 10% and 500%.
-  - Holding Shift/Alt or activating the Hand tool smoothly pans the canvas viewport (`pan.x`, `pan.y`).
+- **Context-Aware Inspector Views**:
+  - **No Layer Selected**: Displays the global Project Settings view (Project Name, Aspect Ratio switcher, Lens, and Background type/color controls).
+  - **Single Layer Selected (`selectedLayerIds.length === 1`)**: Switches to a 2-tab view ("Design" and "Animate") using Radix UI Tabs primitives.
+  - **Multiple Layers Selected (`selectedLayerIds.length > 1`)**: Displays a multi-layer summary panel with count and quick deselection controls.
+- **Design Tab Controls**:
+  - **Universal Transform**: X, Y, Width, Height, Rotation (numeric inputs with canvas-space coordinate mapping), Opacity slider (0-100%) and numerical input, and Depth (Z-depth plane numeric input wired to `transform.depth`).
+  - **Shape Layers**: Shape kind toggle (Rectangle / Ellipse), fill color picker/hex text input, stroke color picker/hex input, and stroke width (px).
+  - **Text Layers**: Text content `textarea`, font family select (Inter, Roboto, Space Grotesk, Playfair Display, JetBrains Mono, Arial, Georgia), font size numeric input, color picker, and text alignment buttons (Left, Center, Right).
+  - **Image Layers**: Read-only natural dimension indicator (`${naturalWidth} × ${naturalHeight} px`) and "Replace image" action button.
+- **Animate Tab**:
+  - Empty state with a disabled "Add animation block" button (`data-testid="button-add-animation-block"`) equipped with a tooltip indicating "Timeline integration coming in the next step".
 
+## Export Engine (WebM, GIF & MP4 Architecture)
 
+- **Unified Frame Renderer (`render-frame.ts`)**:
+  - Pure function `renderSceneFrame` captures the exact visual state of any scene at a given frame index.
+  - Samples active camera position, applies 3D perspective projection, animates transform & opacity properties via `computeRenderedLayer`, evaluates depth-of-field blur (`dofBlurPx`), and runs the bloom post-processing pass.
+  - Preloads all scene image assets prior to export (`preloadSceneImages`) to ensure zero visual flickering or unloaded texture artifacts.
+
+- **WebM Video Export (`export-webm.ts`)**:
+  - Implements frame-by-frame canvas capture using `canvas.captureStream(0)` and manual `track.requestFrame()` calls driven by the same frame sampling engine.
+  - Automatically negotiates supported codecs (`video/webm;codecs=vp9`, fallback `video/webm;codecs=vp8`, `video/webm`).
+  - Encodes directly in browser memory and outputs a standard `Blob` downloaded as `.webm`.
+
+- **Animated GIF Export (`export-gif.ts`)**:
+  - Uses `gif.js` with background web workers (`/gif.worker.js`) executing off the main thread.
+  - Captures frame-by-frame `ImageData` and delivers smooth animated GIFs with customizable resolution scaling and frame rate.
+
+- **MP4 Export Strategy & Architecture Decision Note**:
+  - True MP4 (H.264/AAC) requires either:
+    1. **Client-Side Transcoding via `ffmpeg.wasm`**: Runs WebAssembly client-side to transcode the recorded WebM output directly in the browser completely offline.
+    2. **Server-Side API Transcoding**: POSTs the WebM binary to `artifacts/api-server` (`POST /api/export/mp4`, currently stubbed), running native ffmpeg server-side and returning the `.mp4` binary.
+  - The endpoint `/api/export/mp4` is stubbed in `artifacts/api-server/src/routes/export.ts` awaiting confirmation on which strategy is preferred before implementing full transcoding.
+
+## Automated Unit Testing Suite
+
+The editor includes comprehensive automated unit test suites powered by Vitest, testing pure mathematical calculations, easing/projection models, canvas snapping algorithms, post-processing shaders, and local persistence:
+
+- **Test Runner**: Vitest configured in `artifacts/motion-graphics-editor/vite.config.ts` using the Node.js test environment for execution without DOM overhead.
+- **Running Tests**:
+  - Run package tests: `npm run test --workspace=@workspace/motion-graphics-editor`
+  - Or from project root: `npm test`
+- **Covered Modules**:
+  - `animation-blocks.test.ts`:
+    - `sampleCubicBezier`: Solves cubic-bezier curves using Newton-Raphson iteration; verified against CSS easing references (linear, ease, ease-in, ease-out, ease-in-out) and boundary frames.
+    - `applyEasing`: Tests all 4 modes (`linear`, `ease-in-out`, `spring` with damped harmonic overshoot > 1.0, and `custom` bezier curves).
+    - `sampleBlock`: Evaluates all 9 animation presets (`fade-in`, `fade-out`, `slide-in-left`, `slide-in-right`, `slide-in-up`, `slide-in-down`, `scale-in`, `scale-out`, `camera-move`) at start boundary, midpoint, and end boundary frames.
+    - `computeRenderedLayer`: Multi-block accumulator composition, overlapping blocks on the same layer, pre-start entrance hold, post-end exit hold, keyframe track precedence, and non-animated baseline layers.
+    - `projectLayer` & `focalLength`: Perspective projection verifying `scale = 1.0` at `depth = 0` and `camera.z = 0`, push-in (+z camera movement) scaling up, push-out (-z) scaling down, depth sorting, parallax pan shift, and extreme push-in clamping protection.
+    - `sampleCamera`: Single and multi-block additive accumulation across camera translation, zoom, and FOV, including boundary clamping between 10° and 160°.
+    - `dofBlurPx`: Depth-of-field blur proportional to distance from `camera.focusDistance`, with clamping at extreme distances and custom blur limits.
+  - `snapping.test.ts`:
+    - `getSnapCandidates`: Generates canvas edge/center and layer edge/center candidates, ignoring hidden layers and the moving layer itself.
+    - `snapTransform`: Tests edge and center threshold snapping, horizontal equal-spacing guide generation, and threshold behavior across zoom extremes (strict fine-tuning at high zoom vs. wide snapping at low zoom).
+  - `post-processing.test.ts`:
+    - `applyBloom`: Luminance extraction pass, 0-dimension canvas safety, bright pixel thresholding, and composite pass.
+  - `local-store.test.ts`:
+    - Content-addressed `assets` IndexedDB storage, hash-based deduplication, rolling history pruning, and document snapshot saving/hydration.

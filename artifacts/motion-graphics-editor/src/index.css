@@ -118,6 +118,28 @@
   }
   button, input, select { font: inherit; }
   button { cursor: pointer; }
+
+  /* Visible focus ring for accessibility and keyboard navigation */
+  :focus-visible {
+    outline: 2px solid #38bdf8 !important;
+    outline-offset: 1px !important;
+  }
+
+  .left-panel button:focus-visible,
+  .left-panel input:focus-visible,
+  .left-panel [tabindex="0"]:focus-visible,
+  .right-panel button:focus-visible,
+  .right-panel input:focus-visible,
+  .right-panel select:focus-visible,
+  .right-panel [tabindex="0"]:focus-visible,
+  .text-input:focus-visible,
+  .select-input:focus-visible,
+  .icon-button:focus-visible,
+  .tool-button:focus-visible {
+    outline: 2px solid #38bdf8 !important;
+    outline-offset: 1px !important;
+    box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.3) !important;
+  }
 }
 
 .editor {
@@ -420,6 +442,8 @@
 .stage-wrap {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -529,6 +553,156 @@
   background: transparent; border: 0; border-radius: 4px;
 }
 .tool-button.active { color: white; background: var(--blue); }
+.tool-button.select-dropdown-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2.5px;
+  padding: 0 4px 0 6px;
+  min-width: 32px;
+  height: 24px;
+  position: relative;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.tool-button.select-dropdown-trigger:hover {
+  background: #23262a;
+  color: #ffffff;
+}
+.tool-button.select-dropdown-trigger.active {
+  color: #ffffff;
+  background: var(--blue);
+}
+.tool-button.select-dropdown-trigger.dropdown-open {
+  background: #272a2f;
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.5);
+}
+.tool-button.select-dropdown-trigger.active.dropdown-open {
+  background: var(--blue);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.4);
+}
+.tool-dropdown-caret {
+  width: 5px;
+  height: 3px;
+  opacity: 0.7;
+  margin-left: 1px;
+  transition: transform 0.15s ease;
+}
+.tool-button.select-dropdown-trigger.dropdown-open .tool-dropdown-caret {
+  transform: rotate(180deg);
+  opacity: 1;
+}
+
+.tool-select-dropdown-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  min-width: 154px;
+  background: #1c1c1f;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  padding: 5px;
+  box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.75), 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: toolDropdownAppear 0.12s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: bottom left;
+  user-select: none;
+}
+
+@keyframes toolDropdownAppear {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.tool-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.tool-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tool-dropdown-item.active {
+  background: rgba(56, 189, 248, 0.15);
+}
+
+.tool-dropdown-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tool-dropdown-item-icon {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #d1d5db;
+  flex-shrink: 0;
+}
+
+.tool-dropdown-item:hover .tool-dropdown-item-icon {
+  color: #ffffff;
+}
+
+.tool-dropdown-item.active .tool-dropdown-item-icon {
+  color: #38bdf8;
+}
+
+.tool-dropdown-item-label {
+  font-size: 13px;
+  font-weight: 450;
+  color: #f3f4f6;
+  letter-spacing: -0.1px;
+}
+
+.tool-dropdown-item:hover .tool-dropdown-item-label {
+  color: #ffffff;
+}
+
+.tool-dropdown-item.active .tool-dropdown-item-label {
+  color: #ffffff;
+  font-weight: 500;
+}
+
+.tool-dropdown-item-shortcut {
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #71717a;
+  font-weight: 400;
+}
+
+.tool-dropdown-item:hover .tool-dropdown-item-shortcut {
+  color: #a1a1aa;
+}
+
+.tool-dropdown-item.active .tool-dropdown-item-shortcut {
+  color: #93c5fd;
+}
+
 .tool-button.play { background: #2c2e31; color: #d4d5d7; border: 1px solid #414348; }
 .tool-button.play:hover { background: #3b3e42; }
 .tool-button:disabled { opacity: .5; cursor: default; }

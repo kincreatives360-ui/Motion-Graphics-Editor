@@ -12,123 +12,72 @@ import {
   Check,
   RotateCcw,
   Maximize2,
+  Crosshair,
+  UploadCloud,
 } from "lucide-react";
 import {
   useEditorStore,
+  useEditorUIStore,
   type Layer,
   type Transform,
 } from "../store/editor-store";
+import {
+  computeRenderedLayer,
+  projectLayer,
+  sampleCamera,
+  dofBlurPx,
+  focalLength,
+  type CameraTransform,
+} from "../store/animation-blocks";
+import { applyBloom } from "./post-processing";
+import {
+  drawLayer,
+  getCachedImage,
+  globalImageCache,
+  getScreenTransform,
+} from "../canvas/render-frame";
 import {
   getSnapCandidates,
   snapTransform,
   type SnapLine,
   type SnapCandidates,
 } from "./snapping";
+import {
+  isSvgContent,
+  parseSvgToLayers,
+  importImageFile,
+  addAssetToCanvas,
+} from "../lib/svg-importer";
 
-const imageCache = new Map<string, HTMLImageElement>();
+export { drawLayer, getCachedImage, globalImageCache };
 
-function getImage(src: string, onLoaded?: () => void): HTMLImageElement | null {
-  if (!src) return null;
-  const cached = imageCache.get(src);
-  if (cached) {
-    if (cached.complete && cached.naturalWidth > 0) return cached;
-    return null;
-  }
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.src = src;
-  img.onload = () => {
-    imageCache.set(src, img);
-    onLoaded?.();
-  };
-  img.onerror = () => {
-    imageCache.set(src, img);
-  };
-  imageCache.set(src, img);
-  return null;
-}
-
-function drawLayer(
-  ctx: CanvasRenderingContext2D,
-  layer: Layer,
-  requestRedraw: () => void,
+// Invert screen coordinate to layer world coordinate accounting for camera
+function canvasToWorld(
+  canvasX: number,
+  canvasY: number,
+  camera: { x?: number; y?: number; z?: number; fov?: number },
+  canvasWidth: number,
+  canvasHeight: number,
+  depth = 0,
 ) {
-  if (!layer.visible || layer.opacity <= 0) return;
-
-  ctx.save();
-  ctx.globalAlpha = Math.max(0, Math.min(1, layer.opacity));
-
-  const { x, y, width, height, rotation } = layer.transform;
-  const centerX = x + width / 2;
-  const centerY = y + height / 2;
-
-  // Move origin to center of layer for rotation
-  ctx.translate(centerX, centerY);
-  if (rotation) {
-    ctx.rotate((rotation * Math.PI) / 180);
-  }
-
-  if (layer.type === "shape" && layer.shape) {
-    const { kind, fill, stroke } = layer.shape;
-    const radius = (layer.shape as any).radius || 0;
-
-    ctx.beginPath();
-    if (kind === "ellipse") {
-      ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
-    } else {
-      if (radius > 0 && typeof ctx.roundRect === "function") {
-        ctx.roundRect(-width / 2, -height / 2, width, height, radius);
-      } else {
-        ctx.rect(-width / 2, -height / 2, width, height);
-      }
-    }
-
-    if (fill && fill !== "transparent") {
-      ctx.fillStyle = fill;
-      ctx.fill();
-    }
-    if (stroke && stroke !== "transparent") {
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = (layer.shape as any).strokeWidth || 2;
-      ctx.stroke();
-    }
-  } else if (layer.type === "text" && layer.text) {
-    const {
-      content = "",
-      fontSize = 32,
-      fontFamily = "Inter, system-ui, sans-serif",
-      color = "#ffffff",
-      align = "left",
-    } = layer.text;
-
-    ctx.font = `${fontSize}px ${fontFamily}`;
-    ctx.fillStyle = color;
-    ctx.textAlign = align;
-    ctx.textBaseline = "middle";
-
-    let textX = -width / 2;
-    if (align === "center") {
-      textX = 0;
-    } else if (align === "right") {
-      textX = width / 2;
-    }
-    ctx.fillText(content, textX, 0);
-  } else if (layer.type === "image" && layer.image?.src) {
-    const img = getImage(layer.image.src, requestRedraw);
-    if (img) {
-      ctx.drawImage(img, -width / 2, -height / 2, width, height);
-    }
-  }
-
-  ctx.restore();
+  const f = focalLength(camera.fov ?? 60, canvasHeight);
+  const relDepth = depth - (camera.z || 0);
+  const distance = Math.max(f * 0.05, f + relDepth);
+  const scale = f / distance;
+  const cx = canvasWidth / 2;
+  const cy = canvasHeight / 2;
+  const worldX = (canvasX - cx) / scale + cx + (camera.x || 0);
+  const worldY = (canvasY - cy) / scale + cy + (camera.y || 0);
+  return { worldX, worldY, scale };
 }
 
-// Draw snap guides over canvas
+// Draw snap guides over canvas (projected if camera is active)
 function drawGuides(
   ctx: CanvasRenderingContext2D,
   guides: SnapLine[],
   canvasWidth: number,
   canvasHeight: number,
+  camera?: { x?: number; y?: number; z?: number; fov?: number },
 ) {
   if (!guides || guides.length === 0) return;
 
@@ -137,18 +86,31 @@ function drawGuides(
   ctx.lineWidth = 1.5;
   ctx.setLineDash([4, 4]);
 
+  const f = camera ? focalLength(camera.fov ?? 60, canvasHeight) : canvasHeight;
+  const distance = camera ? Math.max(f * 0.05, f - (camera.z || 0)) : f;
+  const scale = camera ? f / distance : 1;
+  const cx = canvasWidth / 2;
+  const cy = canvasHeight / 2;
+  const camX = camera?.x || 0;
+  const camY = camera?.y || 0;
+
+  const projX = (x: number) => (camera ? cx + (x - camX - cx) * scale : x);
+  const projY = (y: number) => (camera ? cy + (y - camY - cy) * scale : y);
+
   for (const guide of guides) {
     ctx.beginPath();
     if (guide.axis === "x") {
-      const y1 = guide.start !== undefined ? guide.start : 0;
-      const y2 = guide.end !== undefined ? guide.end : canvasHeight;
-      ctx.moveTo(guide.value, y1);
-      ctx.lineTo(guide.value, y2);
+      const px = projX(guide.value);
+      const y1 = projY(guide.start !== undefined ? guide.start : 0);
+      const y2 = projY(guide.end !== undefined ? guide.end : canvasHeight);
+      ctx.moveTo(px, y1);
+      ctx.lineTo(px, y2);
     } else {
-      const x1 = guide.start !== undefined ? guide.start : 0;
-      const x2 = guide.end !== undefined ? guide.end : canvasWidth;
-      ctx.moveTo(x1, guide.value);
-      ctx.lineTo(x2, guide.value);
+      const py = projY(guide.value);
+      const x1 = projX(guide.start !== undefined ? guide.start : 0);
+      const x2 = projX(guide.end !== undefined ? guide.end : canvasWidth);
+      ctx.moveTo(x1, py);
+      ctx.lineTo(x2, py);
     }
     ctx.stroke();
 
@@ -158,11 +120,13 @@ function drawGuides(
       ctx.setLineDash([]);
       ctx.fillStyle = "#38bdf8";
       if (guide.axis === "x") {
-        ctx.fillRect(guide.value - 3, (guide.start ?? 0) - 3, 6, 6);
-        ctx.fillRect(guide.value - 3, (guide.end ?? canvasHeight) - 3, 6, 6);
+        const px = projX(guide.value);
+        ctx.fillRect(px - 3, projY(guide.start ?? 0) - 3, 6, 6);
+        ctx.fillRect(px - 3, projY(guide.end ?? canvasHeight) - 3, 6, 6);
       } else {
-        ctx.fillRect((guide.start ?? 0) - 3, guide.value - 3, 6, 6);
-        ctx.fillRect((guide.end ?? canvasWidth) - 3, guide.value - 3, 6, 6);
+        const py = projY(guide.value);
+        ctx.fillRect(projX(guide.start ?? 0) - 3, py - 3, 6, 6);
+        ctx.fillRect(projX(guide.end ?? canvasWidth) - 3, py - 3, 6, 6);
       }
       ctx.restore();
     }
@@ -171,9 +135,10 @@ function drawGuides(
   ctx.restore();
 }
 
-// Hit-test a layer with rotation
+// Hit-test a layer with rotation (groups pass through to children or outline)
 function hitTestLayer(layer: Layer, canvasX: number, canvasY: number): boolean {
-  if (!layer.visible) return false;
+  if (!layer.visible || layer.locked) return false;
+  if (layer.type === "group") return false;
   const { x, y, width, height, rotation } = layer.transform;
   const centerX = x + width / 2;
   const centerY = y + height / 2;
@@ -194,16 +159,23 @@ function hitTestLayer(layer: Layer, canvasX: number, canvasY: number): boolean {
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 interface DragOperation {
-  type: "move" | "resize" | "pan";
+  type: "move" | "resize" | "rotate" | "pan" | "tilt";
   startClientX: number;
   startClientY: number;
   layerId?: string;
   initialTransform?: Transform;
   initialTransforms?: Map<string, Transform>;
   initialPan?: { x: number; y: number };
+  initialCamera?: { x: number; y: number; z: number; fov: number; focusDistance: number };
   resizeHandle?: ResizeHandle;
+  startAngle?: number;
+  groupCenter?: { x: number; y: number };
+  screenCenter?: { x: number; y: number };
   candidates?: SnapCandidates;
   otherLayers?: Layer[];
+  projectedScale?: number;
+  pendingSingleSelectId?: string;
+  hasMoved?: boolean;
 }
 
 const ZOOM_PRESETS = [25, 50, 75, 100, 125, 150, 200, 300, 400];
@@ -213,13 +185,15 @@ export function CanvasStage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const zoomControlRef = useRef<HTMLDivElement>(null);
 
-  const zoom = useEditorStore((s) => s.zoom);
-  const setZoom = useEditorStore((s) => s.setZoom);
-  const pan = useEditorStore((s) => s.pan);
-  const setPan = useEditorStore((s) => s.setPan);
-  const activeTool = useEditorStore((s) => s.activeTool);
-  const setActiveTool = useEditorStore((s) => s.setActiveTool);
-  const playing = useEditorStore((s) => s.playing);
+  const zoom = useEditorUIStore((s) => s.zoom);
+  const setZoom = useEditorUIStore((s) => s.setZoom);
+  const pan = useEditorUIStore((s) => s.pan);
+  const setPan = useEditorUIStore((s) => s.setPan);
+  const activeTool = useEditorUIStore((s) => s.activeTool);
+  const setActiveTool = useEditorUIStore((s) => s.setActiveTool);
+  const playing = useEditorUIStore((s) => s.playing);
+  const currentFrame = useEditorUIStore((s) => s.currentFrame);
+  const setCurrentFrame = useEditorUIStore((s) => s.setCurrentFrame);
   const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
   const selectLayers = useEditorStore((s) => s.selectLayers);
   const addLayer = useEditorStore((s) => s.addLayer);
@@ -227,12 +201,59 @@ export function CanvasStage() {
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
   const aspectRatio = useEditorStore((s) => s.aspectRatio) || "16:9";
+  const bloom = useEditorStore((s) => s.bloom);
+  const updateCamera = useEditorStore((s) => s.updateCamera);
 
-  const [containerSize, setContainerSize] = useState({ width: 600, height: 400 });
+  const [containerSize, setContainerSize] = useState({ width: 1200, height: 700 });
   const [activeGuides, setActiveGuides] = useState<SnapLine[]>([]);
   const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
   const [editingTextValue, setEditingTextValue] = useState("");
   const [zoomDropdownOpen, setZoomDropdownOpen] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isSpacePressed, setIsSpacePressed] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space" && !e.repeat) {
+        const target = e.target as HTMLElement | null;
+        if (
+          target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable)
+        ) {
+          return;
+        }
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === "Space") {
+        setIsSpacePressed(false);
+      }
+    };
+
+    const handleBlur = () => {
+      setIsSpacePressed(false);
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, []);
+
+  // Dev-only FPS tracking
+  const [fps, setFps] = useState<number>(60);
+  const frameTimesRef = useRef<number[]>([]);
+  const lastFpsUpdateRef = useRef<number>(0);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const dragOpRef = useRef<DragOperation | null>(null);
   const redrawRef = useRef<() => void>(() => {});
@@ -242,6 +263,27 @@ export function CanvasStage() {
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],
     [scenes, activeSceneId],
   );
+
+  const handleFocusPillPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startFocus = activeScene?.camera?.focusDistance ?? 1000;
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - startX;
+      const newFocus = Math.max(0, Math.round(startFocus + deltaX * 3));
+      updateCamera({ focusDistance: newFocus });
+    };
+
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
 
   const nativeWidth =
     aspectRatio === "9:16" ? 1080 : aspectRatio === "1:1" ? 1080 : 1920;
@@ -254,6 +296,15 @@ export function CanvasStage() {
     const container = containerRef.current;
     if (!container) return;
 
+    const updateSize = () => {
+      const rect = container.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setContainerSize({ width: rect.width, height: rect.height });
+      }
+    };
+
+    updateSize();
+
     const observer = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect;
@@ -264,12 +315,17 @@ export function CanvasStage() {
     });
 
     observer.observe(container);
-    return () => observer.disconnect();
+    window.addEventListener("resize", updateSize);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateSize);
+    };
   }, []);
 
   // Compute display size and scale factor
-  const maxW = Math.max(80, containerSize.width - 64);
-  const maxH = Math.max(80, containerSize.height - 80);
+  const maxW = Math.max(200, containerSize.width - 64);
+  const maxH = Math.max(150, containerSize.height - 80);
   let fitW = maxW;
   let fitH = maxH;
   if (maxW / maxH > aspect) {
@@ -284,6 +340,28 @@ export function CanvasStage() {
   const displayW = Math.max(40, fitW * (currentZoom / 100));
   const displayH = Math.max(40, fitH * (currentZoom / 100));
   const scaleFactor = displayW / nativeWidth;
+
+  // Playback timer: advances currentFrame at scene fps looping at durationFrames
+  useEffect(() => {
+    if (!playing) return;
+    const fps = activeScene?.fps || 30;
+    const durationFrames = activeScene?.durationFrames || 180;
+    const intervalMs = 1000 / fps;
+    let lastTime = performance.now();
+    let animId: number;
+
+    const tick = (now: number) => {
+      const elapsed = now - lastTime;
+      if (elapsed >= intervalMs) {
+        lastTime = now - (elapsed % intervalMs);
+        setCurrentFrame((prev) => (prev + 1) % durationFrames);
+      }
+      animId = requestAnimationFrame(tick);
+    };
+
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [playing, activeScene?.fps, activeScene?.durationFrames, setCurrentFrame]);
 
   // Render canvas
   const draw = useCallback(() => {
@@ -313,18 +391,93 @@ export function CanvasStage() {
     ctx.fillStyle = "#000000";
     ctx.fillRect(0, 0, nativeWidth, nativeHeight);
 
-    // Draw layers in ascending order
+    // Draw layers in ascending order with animation sampling and camera projection
     if (activeScene && activeScene.layers) {
+      const animationBlocks = activeScene.animationBlocks || [];
+      const currentCamera = sampleCamera(
+        activeScene.camera,
+        animationBlocks,
+        currentFrame,
+      );
+      const cameraCtx: CameraTransform = {
+        camera: currentCamera,
+        canvasWidth: nativeWidth,
+        canvasHeight: nativeHeight,
+      };
+
       for (const layer of activeScene.layers) {
-        drawLayer(ctx, layer, () => draw());
+        const { effectiveLayer } = getScreenTransform(
+          layer,
+          animationBlocks,
+          currentFrame,
+          currentCamera,
+          { width: nativeWidth, height: nativeHeight },
+          activeScene.layers,
+        );
+
+        if (!effectiveLayer.visible || effectiveLayer.opacity <= 0) continue;
+
+        // Depth of field: blur each layer proportionally to distance from camera.focusDistance
+        const blurAmount = dofBlurPx(layer, currentCamera);
+        if (blurAmount > 0.05) {
+          ctx.filter = `blur(${blurAmount.toFixed(2)}px)`;
+        } else {
+          ctx.filter = "none";
+        }
+
+        drawLayer(ctx, effectiveLayer, () => draw());
+        ctx.filter = "none";
+      }
+
+      // Bloom post-processing pass over full canvas
+      if (bloom?.enabled && canvas) {
+        if (!offscreenCanvasRef.current) {
+          offscreenCanvasRef.current = document.createElement("canvas");
+        }
+        applyBloom(
+          canvas,
+          offscreenCanvasRef.current,
+          bloom.threshold ?? 200,
+          bloom.blurPx ?? 16,
+          bloom.intensity ?? 1.0,
+        );
       }
     }
 
     // Draw active snap guides
     if (activeGuides.length > 0) {
-      drawGuides(ctx, activeGuides, nativeWidth, nativeHeight);
+      const activeCamera = activeScene
+        ? sampleCamera(
+            activeScene.camera,
+            activeScene.animationBlocks || [],
+            currentFrame,
+          )
+        : undefined;
+      drawGuides(ctx, activeGuides, nativeWidth, nativeHeight, activeCamera);
     }
-  }, [displayW, displayH, scaleFactor, nativeWidth, nativeHeight, activeScene, activeGuides]);
+
+    // Rolling FPS measurement for dev overlay
+    const now = performance.now();
+    const times = frameTimesRef.current;
+    times.push(now);
+    while (times.length > 0 && times[0] <= now - 1000) {
+      times.shift();
+    }
+    if (now - lastFpsUpdateRef.current > 250) {
+      lastFpsUpdateRef.current = now;
+      setFps(times.length);
+    }
+  }, [
+    displayW,
+    displayH,
+    scaleFactor,
+    nativeWidth,
+    nativeHeight,
+    activeScene,
+    activeGuides,
+    currentFrame,
+    bloom,
+  ]);
 
   redrawRef.current = draw;
 
@@ -348,13 +501,22 @@ export function CanvasStage() {
 
   // Subscribe to store updates when not playing
   useEffect(() => {
-    const unsubscribe = useEditorStore.subscribe(() => {
-      const isPlaying = useEditorStore.getState().playing;
+    const unsubDoc = useEditorStore.subscribe(() => {
+      const isPlaying = useEditorUIStore.getState().playing;
       if (!isPlaying) {
         redrawRef.current();
       }
     });
-    return unsubscribe;
+    const unsubUI = useEditorUIStore.subscribe(() => {
+      const isPlaying = useEditorUIStore.getState().playing;
+      if (!isPlaying) {
+        redrawRef.current();
+      }
+    });
+    return () => {
+      unsubDoc();
+      unsubUI();
+    };
   }, []);
 
   // Close zoom dropdown on click outside
@@ -424,6 +586,85 @@ export function CanvasStage() {
     };
   };
 
+  // Drag and drop asset / image handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    if (!isDragOver) setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    // 1. Check if an existing asset from the Assets tab was dropped
+    const assetJson = e.dataTransfer.getData("application/x-editor-asset");
+    if (assetJson) {
+      try {
+        const asset = JSON.parse(assetJson);
+        addAssetToCanvas(asset);
+        return;
+      } catch {
+        // Continue to check files
+      }
+    }
+
+    // 2. Check if external files were dropped
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files);
+      for (const file of files) {
+        if (
+          file.type.startsWith("image/") ||
+          /\.(png|jpe?g|svg|webp|gif|avif)$/i.test(file.name)
+        ) {
+          // If SVG file, check if it can be parsed into vector layers
+          if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) {
+            try {
+              const text = await file.text();
+              if (isSvgContent(text)) {
+                const parsed = parseSvgToLayers(text);
+                if (parsed && parsed.layers.length > 0) {
+                  useEditorStore
+                    .getState()
+                    .addImportedLayers(parsed.layers, [parsed.groupId]);
+
+                  // Also save to assets library
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    if (reader.result) {
+                      useEditorStore.getState().addAsset({
+                        name: file.name.replace(/\.[^/.]+$/, ""),
+                        dataUrl: reader.result as string,
+                        width: 800,
+                        height: 600,
+                      });
+                    }
+                  };
+                  reader.readAsDataURL(file);
+                  continue;
+                }
+              }
+            } catch {
+              // Fallback to raster image import
+            }
+          }
+
+          // Import raster image (or non-parsed SVG)
+          await importImageFile(file);
+        }
+      }
+    }
+  };
+
   // Handle stage pointer down
   const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // If text editing is active, commit it on outside click
@@ -432,7 +673,7 @@ export function CanvasStage() {
     }
 
     // Pan tool or middle click or space key
-    if (activeTool === "hand" || e.button === 1 || e.spaceKey) {
+    if (activeTool === "hand" || e.button === 1 || isSpacePressed) {
       dragOpRef.current = {
         type: "pan",
         startClientX: e.clientX,
@@ -443,18 +684,51 @@ export function CanvasStage() {
       return;
     }
 
+    // Tilt (3D Camera orbit) tool
+    if (activeTool === "tilt") {
+      dragOpRef.current = {
+        type: "tilt",
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        initialCamera: {
+          x: activeScene.camera?.x ?? 0,
+          y: activeScene.camera?.y ?? 0,
+          z: activeScene.camera?.z ?? 0,
+          fov: activeScene.camera?.fov ?? 60,
+          focusDistance: activeScene.camera?.focusDistance ?? 1000,
+        },
+      };
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
+
     const { x: canvasX, y: canvasY } = getCanvasCoords(e.clientX, e.clientY);
+    const layers = activeScene.layers || [];
+    const animationBlocks = activeScene.animationBlocks || [];
+    const currentCamera = sampleCamera(
+      activeScene.camera,
+      animationBlocks,
+      currentFrame,
+    );
 
     // Shape Tool: Click canvas to place default rectangle
     if (activeTool === "shape") {
       const width = 200;
       const height = 200;
+      const { worldX, worldY } = canvasToWorld(
+        canvasX,
+        canvasY,
+        currentCamera,
+        nativeWidth,
+        nativeHeight,
+        0,
+      );
       const newId = addLayer(activeScene.id, {
         type: "shape",
         name: `Rectangle ${(activeScene.layers.length || 0) + 1}`,
         transform: {
-          x: Math.round(Math.max(0, canvasX - width / 2)),
-          y: Math.round(Math.max(0, canvasY - height / 2)),
+          x: Math.round(Math.max(0, worldX - width / 2)),
+          y: Math.round(Math.max(0, worldY - height / 2)),
           width,
           height,
           rotation: 0,
@@ -473,12 +747,20 @@ export function CanvasStage() {
 
     // Text Tool: Click canvas to place editable text layer
     if (activeTool === "text") {
+      const { worldX, worldY } = canvasToWorld(
+        canvasX,
+        canvasY,
+        currentCamera,
+        nativeWidth,
+        nativeHeight,
+        0,
+      );
       const newId = addLayer(activeScene.id, {
         type: "text",
         name: `Text ${(activeScene.layers.length || 0) + 1}`,
         transform: {
-          x: Math.round(Math.max(0, canvasX)),
-          y: Math.round(Math.max(0, canvasY - 24)),
+          x: Math.round(Math.max(0, worldX)),
+          y: Math.round(Math.max(0, worldY - 24)),
           width: 260,
           height: 52,
           rotation: 0,
@@ -499,43 +781,85 @@ export function CanvasStage() {
       return;
     }
 
-    // Scene (Select) Tool
-    if (activeTool === "scene") {
-      // Hit-test layers top-down
-      const layers = activeScene.layers || [];
+    // Scene (Select) / Move / Scissors Tool
+    if (activeTool === "scene" || activeTool === "move" || activeTool === "scissors") {
+      // Hit-test layers top-down using projected camera coordinates
       let hitLayer: Layer | null = null;
       for (let i = layers.length - 1; i >= 0; i--) {
-        if (hitTestLayer(layers[i], canvasX, canvasY)) {
-          hitLayer = layers[i];
+        const layer = layers[i];
+        const { effectiveLayer } = getScreenTransform(
+          layer,
+          animationBlocks,
+          currentFrame,
+          currentCamera,
+          { width: nativeWidth, height: nativeHeight },
+          layers,
+        );
+        if (hitTestLayer(effectiveLayer, canvasX, canvasY)) {
+          hitLayer = layer;
           break;
         }
       }
 
       if (hitLayer) {
+        // Resolve group hierarchy if user isn't holding cmd/ctrl to deep-select
+        let targetLayer = hitLayer;
+        if (!e.metaKey && !e.ctrlKey) {
+          let curr = hitLayer;
+          while (curr.parentId) {
+            const parent = layers.find((l) => l.id === curr.parentId);
+            if (parent && parent.type === "group") {
+              if (selectedLayerIds.includes(parent.id)) {
+                break;
+              }
+              targetLayer = parent;
+              curr = parent;
+            } else {
+              break;
+            }
+          }
+        }
+
         let newSelection = selectedLayerIds;
+        let pendingSingleSelectId: string | undefined = undefined;
+
         if (e.metaKey || e.ctrlKey) {
-          if (selectedLayerIds.includes(hitLayer.id)) {
-            newSelection = selectedLayerIds.filter((id) => id !== hitLayer!.id);
+          if (selectedLayerIds.includes(targetLayer.id)) {
+            newSelection = selectedLayerIds.filter((id) => id !== targetLayer.id);
           } else {
-            newSelection = [...selectedLayerIds, hitLayer.id];
+            newSelection = [...selectedLayerIds, targetLayer.id];
           }
           selectLayers(newSelection);
         } else if (e.shiftKey) {
-          if (!selectedLayerIds.includes(hitLayer.id)) {
-            newSelection = [...selectedLayerIds, hitLayer.id];
+          if (!selectedLayerIds.includes(targetLayer.id)) {
+            newSelection = [...selectedLayerIds, targetLayer.id];
             selectLayers(newSelection);
           }
         } else {
-          if (!selectedLayerIds.includes(hitLayer.id)) {
-            newSelection = [hitLayer.id];
+          // If clicking an already selected item in a multi-selection, preserve selection for drag
+          if (selectedLayerIds.includes(targetLayer.id) && selectedLayerIds.length > 1) {
+            pendingSingleSelectId = targetLayer.id;
+          } else if (!selectedLayerIds.includes(targetLayer.id)) {
+            newSelection = [targetLayer.id];
             selectLayers(newSelection);
           }
         }
 
-        // Map initial transforms for all selected layers
+        // Map initial transforms for all selected layers and children of any selected groups
         const initialTransforms = new Map<string, Transform>();
+        const allSelectedAndChildren = new Set(newSelection);
+        let expanded = true;
+        while (expanded) {
+          expanded = false;
+          for (const l of layers) {
+            if (l.parentId && allSelectedAndChildren.has(l.parentId) && !allSelectedAndChildren.has(l.id)) {
+              allSelectedAndChildren.add(l.id);
+              expanded = true;
+            }
+          }
+        }
         for (const layer of layers) {
-          if (newSelection.includes(layer.id)) {
+          if (allSelectedAndChildren.has(layer.id)) {
             initialTransforms.set(layer.id, { ...layer.transform });
           }
         }
@@ -543,21 +867,33 @@ export function CanvasStage() {
         // Start drag move operation
         const otherLayers = activeScene.layers.filter((l) => !newSelection.includes(l.id));
         const candidates = getSnapCandidates(
-          hitLayer,
+          targetLayer,
           otherLayers,
           nativeWidth,
           nativeHeight,
+        );
+
+        const screen = getScreenTransform(
+          targetLayer,
+          animationBlocks,
+          currentFrame,
+          currentCamera,
+          { width: nativeWidth, height: nativeHeight },
+          layers,
         );
 
         dragOpRef.current = {
           type: "move",
           startClientX: e.clientX,
           startClientY: e.clientY,
-          layerId: hitLayer.id,
-          initialTransform: { ...hitLayer.transform },
+          layerId: targetLayer.id,
+          initialTransform: { ...targetLayer.transform },
           initialTransforms,
           candidates,
           otherLayers,
+          projectedScale: screen.scale,
+          pendingSingleSelectId,
+          hasMoved: false,
         };
 
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -585,15 +921,129 @@ export function CanvasStage() {
       nativeHeight,
     );
 
+    // Collect child transforms if layer is a group or has children
+    const initialTransforms = new Map<string, Transform>();
+    const childIds = new Set<string>();
+    let expanded = true;
+    while (expanded) {
+      expanded = false;
+      for (const l of activeScene.layers) {
+        if (
+          l.parentId &&
+          (l.parentId === layer.id || childIds.has(l.parentId)) &&
+          !childIds.has(l.id)
+        ) {
+          childIds.add(l.id);
+          expanded = true;
+        }
+      }
+    }
+    for (const l of activeScene.layers) {
+      if (childIds.has(l.id)) {
+        initialTransforms.set(l.id, { ...l.transform });
+      }
+    }
+
+    const currentCamera = sampleCamera(
+      activeScene?.camera || { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 },
+      activeScene?.animationBlocks || [],
+      currentFrame,
+    );
+    const screen = getScreenTransform(
+      layer,
+      activeScene?.animationBlocks || [],
+      currentFrame,
+      currentCamera,
+      { width: nativeWidth, height: nativeHeight },
+      activeScene?.layers || [],
+    );
+
     dragOpRef.current = {
       type: "resize",
       startClientX: e.clientX,
       startClientY: e.clientY,
       layerId: layer.id,
       initialTransform: { ...layer.transform },
+      initialTransforms,
       resizeHandle: handle,
       candidates,
       otherLayers,
+      projectedScale: screen.scale,
+    };
+
+    if (containerRef.current) {
+      containerRef.current.setPointerCapture(e.pointerId);
+    }
+  };
+
+  // Start rotate handle drag
+  const startRotate = (
+    e: React.PointerEvent<HTMLDivElement>,
+    layer: Layer,
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    const currentCamera = sampleCamera(
+      activeScene?.camera || { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 },
+      activeScene?.animationBlocks || [],
+      currentFrame,
+    );
+    const screen = getScreenTransform(
+      layer,
+      activeScene?.animationBlocks || [],
+      currentFrame,
+      currentCamera,
+      { width: nativeWidth, height: nativeHeight },
+      activeScene?.layers || [],
+    );
+
+    const screenCenterX = screen.x + screen.width / 2;
+    const screenCenterY = screen.y + screen.height / 2;
+    const worldCenterX = layer.transform.x + layer.transform.width / 2;
+    const worldCenterY = layer.transform.y + layer.transform.height / 2;
+
+    const { x: pointerCanvasX, y: pointerCanvasY } = getCanvasCoords(
+      e.clientX,
+      e.clientY,
+    );
+
+    const startAngle =
+      (Math.atan2(pointerCanvasY - screenCenterY, pointerCanvasX - screenCenterX) * 180) /
+      Math.PI;
+
+    const initialTransforms = new Map<string, Transform>();
+    const childIds = new Set<string>();
+    let expanded = true;
+    while (expanded) {
+      expanded = false;
+      for (const l of activeScene.layers) {
+        if (
+          l.parentId &&
+          (l.parentId === layer.id || childIds.has(l.parentId)) &&
+          !childIds.has(l.id)
+        ) {
+          childIds.add(l.id);
+          expanded = true;
+        }
+      }
+    }
+    for (const l of activeScene.layers) {
+      if (childIds.has(l.id)) {
+        initialTransforms.set(l.id, { ...l.transform });
+      }
+    }
+
+    dragOpRef.current = {
+      type: "rotate",
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      layerId: layer.id,
+      initialTransform: { ...layer.transform },
+      initialTransforms,
+      startAngle,
+      groupCenter: { x: worldCenterX, y: worldCenterY },
+      screenCenter: { x: screenCenterX, y: screenCenterY },
     };
 
     if (containerRef.current) {
@@ -616,14 +1066,35 @@ export function CanvasStage() {
       return;
     }
 
+    if (op.type === "tilt" && op.initialCamera) {
+      const dx = (e.clientX - op.startClientX) * 0.4;
+      const dy = (e.clientY - op.startClientY) * 0.4;
+      updateCamera(
+        {
+          x: Math.round(op.initialCamera.x + dx),
+          y: Math.round(op.initialCamera.y + dy),
+        },
+        activeScene.id,
+      );
+      return;
+    }
+
     if (op.type === "move" && op.layerId && op.initialTransform) {
+      const dist = Math.hypot(e.clientX - op.startClientX, e.clientY - op.startClientY);
+      if (dist > 3) {
+        op.hasMoved = true;
+      }
+
+      const moveScale = op.projectedScale && op.projectedScale > 0 ? op.projectedScale : 1.0;
       const deltaCanvasX = (e.clientX - op.startClientX) / scaleFactor;
       const deltaCanvasY = (e.clientY - op.startClientY) / scaleFactor;
+      const deltaWorldX = deltaCanvasX / moveScale;
+      const deltaWorldY = deltaCanvasY / moveScale;
 
       const tentative: Transform = {
         ...op.initialTransform,
-        x: Math.round(op.initialTransform.x + deltaCanvasX),
-        y: Math.round(op.initialTransform.y + deltaCanvasY),
+        x: Math.round(op.initialTransform.x + deltaWorldX),
+        y: Math.round(op.initialTransform.y + deltaWorldY),
       };
 
       // Snapping threshold scaled by zoom
@@ -663,6 +1134,71 @@ export function CanvasStage() {
     }
 
     if (
+      op.type === "rotate" &&
+      op.layerId &&
+      op.initialTransform &&
+      op.groupCenter &&
+      typeof op.startAngle === "number"
+    ) {
+      const { x: pointerCanvasX, y: pointerCanvasY } = getCanvasCoords(
+        e.clientX,
+        e.clientY,
+      );
+      const center = op.screenCenter || op.groupCenter;
+      const currentAngle =
+        (Math.atan2(
+          pointerCanvasY - center.y,
+          pointerCanvasX - center.x,
+        ) *
+          180) /
+        Math.PI;
+      let deltaAngle = currentAngle - op.startAngle;
+
+      let newRotation = op.initialTransform.rotation + deltaAngle;
+      if (e.shiftKey) {
+        newRotation = Math.round(newRotation / 15) * 15;
+        deltaAngle = newRotation - op.initialTransform.rotation;
+      }
+
+      updateLayer(op.layerId, {
+        transform: {
+          ...op.initialTransform,
+          rotation: Math.round(newRotation),
+        },
+      });
+
+      // If group has children, rotate each around group center
+      if (op.initialTransforms && op.initialTransforms.size > 0) {
+        const rad = (deltaAngle * Math.PI) / 180;
+        const cosRad = Math.cos(rad);
+        const sinRad = Math.sin(rad);
+
+        op.initialTransforms.forEach((childInit, childId) => {
+          const childCX = childInit.x + childInit.width / 2;
+          const childCY = childInit.y + childInit.height / 2;
+          const relX = childCX - op.groupCenter!.x;
+          const relY = childCY - op.groupCenter!.y;
+
+          const rotRelX = relX * cosRad - relY * sinRad;
+          const rotRelY = relX * sinRad + relY * cosRad;
+
+          const newChildCX = op.groupCenter!.x + rotRelX;
+          const newChildCY = op.groupCenter!.y + rotRelY;
+
+          updateLayer(childId, {
+            transform: {
+              ...childInit,
+              x: Math.round(newChildCX - childInit.width / 2),
+              y: Math.round(newChildCY - childInit.height / 2),
+              rotation: Math.round((childInit.rotation + deltaAngle) % 360),
+            },
+          });
+        });
+      }
+      return;
+    }
+
+    if (
       op.type === "resize" &&
       op.layerId &&
       op.initialTransform &&
@@ -670,8 +1206,9 @@ export function CanvasStage() {
     ) {
       const handle = op.resizeHandle;
       const init = op.initialTransform;
-      const deltaScreenX = (e.clientX - op.startClientX) / scaleFactor;
-      const deltaScreenY = (e.clientY - op.startClientY) / scaleFactor;
+      const moveScale = op.projectedScale && op.projectedScale > 0 ? op.projectedScale : 1.0;
+      const deltaScreenX = (e.clientX - op.startClientX) / (scaleFactor * moveScale);
+      const deltaScreenY = (e.clientY - op.startClientY) / (scaleFactor * moveScale);
 
       // Project screen delta into layer's rotated local coordinate space
       const rad = (-init.rotation * Math.PI) / 180;
@@ -723,21 +1260,54 @@ export function CanvasStage() {
       const canvasOffsetY =
         localOffsetX * Math.sin(unrad) + localOffsetY * Math.cos(unrad);
 
+      const nextGroupTransform = {
+        ...init,
+        x: Math.round(init.x + canvasOffsetX),
+        y: Math.round(init.y + canvasOffsetY),
+        width: Math.round(newWidth),
+        height: Math.round(newHeight),
+      };
+
       updateLayer(op.layerId, {
-        transform: {
-          ...init,
-          x: Math.round(init.x + canvasOffsetX),
-          y: Math.round(init.y + canvasOffsetY),
-          width: Math.round(newWidth),
-          height: Math.round(newHeight),
-        },
+        transform: nextGroupTransform,
       });
+
+      // Redistribute proportionally to group children
+      if (op.initialTransforms && op.initialTransforms.size > 0) {
+        const initW = Math.max(1, init.width);
+        const initH = Math.max(1, init.height);
+        op.initialTransforms.forEach((childInit, childId) => {
+          const uX = (childInit.x - init.x) / initW;
+          const uY = (childInit.y - init.y) / initH;
+          const uW = childInit.width / initW;
+          const uH = childInit.height / initH;
+
+          const newChildX = Math.round(nextGroupTransform.x + uX * nextGroupTransform.width);
+          const newChildY = Math.round(nextGroupTransform.y + uY * nextGroupTransform.height);
+          const newChildW = Math.max(1, Math.round(uW * nextGroupTransform.width));
+          const newChildH = Math.max(1, Math.round(uH * nextGroupTransform.height));
+
+          updateLayer(childId, {
+            transform: {
+              ...childInit,
+              x: newChildX,
+              y: newChildY,
+              width: newChildW,
+              height: newChildH,
+            },
+          });
+        });
+      }
     }
   };
 
   // Pointer Up (End gesture)
   const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (dragOpRef.current) {
+      const op = dragOpRef.current;
+      if (!op.hasMoved && op.pendingSingleSelectId) {
+        selectLayers([op.pendingSingleSelectId]);
+      }
       dragOpRef.current = null;
       setActiveGuides([]);
       try {
@@ -746,6 +1316,37 @@ export function CanvasStage() {
         }
       } catch {
         // Capture release safety
+      }
+    }
+  };
+
+  // Double click text layer to edit inline
+  const handleStageDoubleClick = (e: React.PointerEvent<HTMLDivElement>) => {
+    const { x: canvasX, y: canvasY } = getCanvasCoords(e.clientX, e.clientY);
+    const layers = activeScene.layers || [];
+    const animationBlocks = activeScene.animationBlocks || [];
+    const currentCamera = sampleCamera(
+      activeScene.camera,
+      animationBlocks,
+      currentFrame,
+    );
+
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layer = layers[i];
+      if (layer.type !== "text" || !layer.visible || layer.locked) continue;
+      const { effectiveLayer } = getScreenTransform(
+        layer,
+        animationBlocks,
+        currentFrame,
+        currentCamera,
+        { width: nativeWidth, height: nativeHeight },
+        layers,
+      );
+      if (hitTestLayer(effectiveLayer, canvasX, canvasY)) {
+        selectLayers([layer.id]);
+        setEditingTextLayerId(layer.id);
+        setEditingTextValue(layer.text?.content || "");
+        break;
       }
     }
   };
@@ -804,20 +1405,36 @@ export function CanvasStage() {
       className="stage-wrap"
       style={{
         cursor:
-          activeTool === "hand"
-            ? "grab"
+          isSpacePressed
+            ? dragOpRef.current?.type === "pan" ? "grabbing" : "grab"
+            : activeTool === "hand"
+            ? dragOpRef.current?.type === "pan" ? "grabbing" : "grab"
+            : activeTool === "tilt"
+            ? dragOpRef.current?.type === "tilt" ? "grabbing" : "grab"
+            : activeTool === "move"
+            ? "move"
+            : activeTool === "scissors"
+            ? "crosshair"
             : activeTool === "text"
             ? "text"
             : activeTool === "shape"
             ? "crosshair"
             : "default",
         userSelect: "none",
-        position: "relative",
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
       }}
       onPointerDown={handleStagePointerDown}
       onPointerMove={handleStagePointerMove}
       onPointerUp={handleStagePointerUp}
       onPointerCancel={handleStagePointerUp}
+      onDoubleClick={handleStageDoubleClick}
+      onDragOver={handleDragOver}
+      onDragEnter={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
     >
       {/* Canvas Viewport Node */}
       <div
@@ -842,122 +1459,252 @@ export function CanvasStage() {
           }}
         />
 
-        {/* Multi-selection outlines */}
-        {multiSelectedLayers.map((layer) => (
+        {/* Drag & Drop Canvas Visual Indicator Overlay */}
+        {isDragOver && (
           <div
-            key={layer.id}
-            style={{
-              position: "absolute",
-              left: `${layer.transform.x * scaleFactor}px`,
-              top: `${layer.transform.y * scaleFactor}px`,
-              width: `${layer.transform.width * scaleFactor}px`,
-              height: `${layer.transform.height * scaleFactor}px`,
-              transform: `rotate(${layer.transform.rotation}deg)`,
-              transformOrigin: "center center",
-              border: "1px dashed #38bdf8",
-              pointerEvents: "none",
-              boxSizing: "border-box",
-            }}
-          />
-        ))}
-
-        {/* Single Selection Bounding Box and Resize Handles */}
-        {selectedLayer && selectedLayer.visible && !editingTextLayerId && (
-          <div
-            style={{
-              position: "absolute",
-              left: `${selectedLayer.transform.x * scaleFactor}px`,
-              top: `${selectedLayer.transform.y * scaleFactor}px`,
-              width: `${selectedLayer.transform.width * scaleFactor}px`,
-              height: `${selectedLayer.transform.height * scaleFactor}px`,
-              transform: `rotate(${selectedLayer.transform.rotation}deg)`,
-              transformOrigin: "center center",
-              border: "1.5px solid #38bdf8",
-              pointerEvents: "none",
-              boxSizing: "border-box",
-            }}
+            className="absolute inset-0 z-30 pointer-events-none rounded border-2 border-dashed border-[#38bdf8] bg-[#0284c7]/20 backdrop-blur-[2px] flex flex-col items-center justify-center gap-2 shadow-2xl animate-in fade-in duration-150"
+            data-testid="canvas-drop-overlay"
           >
-            {/* 8 Resize Handles */}
-            {(
-              [
-                { handle: "nw", x: 0, y: 0, cursor: "nwse-resize" },
-                { handle: "n", x: 50, y: 0, cursor: "ns-resize" },
-                { handle: "ne", x: 100, y: 0, cursor: "nesw-resize" },
-                { handle: "e", x: 100, y: 50, cursor: "ew-resize" },
-                { handle: "se", x: 100, y: 100, cursor: "nwse-resize" },
-                { handle: "s", x: 50, y: 100, cursor: "ns-resize" },
-                { handle: "sw", x: 0, y: 100, cursor: "nesw-resize" },
-                { handle: "w", x: 0, y: 50, cursor: "ew-resize" },
-              ] as const
-            ).map(({ handle, x, y, cursor }) => (
-              <div
-                key={handle}
-                style={{
-                  position: "absolute",
-                  left: `${x}%`,
-                  top: `${y}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: "7px",
-                  height: "7px",
-                  background: "#ffffff",
-                  border: "1.5px solid #0284c7",
-                  borderRadius: "1px",
-                  cursor,
-                  pointerEvents: "auto",
-                }}
-                onPointerDown={(e) => startResize(e, handle, selectedLayer)}
-              />
-            ))}
+            <div className="w-12 h-12 rounded-full bg-[#0284c7]/40 border border-[#38bdf8] flex items-center justify-center text-[#38bdf8] shadow-lg">
+              <UploadCloud size={24} className="animate-bounce" />
+            </div>
+            <span className="text-[11px] font-semibold text-[#f0f9ff] tracking-wide bg-[#0b0f14]/90 px-3 py-1 rounded-full border border-[#38bdf8]/40 shadow-sm">
+              Drop image or SVG to add to canvas
+            </span>
           </div>
         )}
 
-        {/* Inline Text Editor Overlay */}
-        {editingTextLayerId && selectedLayer && selectedLayer.text && (
-          <div
-            style={{
-              position: "absolute",
-              left: `${selectedLayer.transform.x * scaleFactor}px`,
-              top: `${selectedLayer.transform.y * scaleFactor}px`,
-              width: `${Math.max(100, selectedLayer.transform.width * scaleFactor)}px`,
-              minHeight: `${selectedLayer.transform.height * scaleFactor}px`,
-              transform: `rotate(${selectedLayer.transform.rotation}deg)`,
-              transformOrigin: "center center",
-              zIndex: 10,
-            }}
-          >
-            <textarea
-              ref={textInputRef}
-              value={editingTextValue}
-              onChange={(e) => setEditingTextValue(e.target.value)}
-              onBlur={commitTextEdit}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  commitTextEdit();
-                } else if (e.key === "Escape") {
-                  setEditingTextLayerId(null);
-                }
-              }}
+        {/* Multi-selection outlines */}
+        {multiSelectedLayers.map((layer) => {
+          const currentCamera = sampleCamera(
+            activeScene?.camera || { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 },
+            activeScene?.animationBlocks || [],
+            currentFrame,
+          );
+          const screen = getScreenTransform(
+            layer,
+            activeScene?.animationBlocks || [],
+            currentFrame,
+            currentCamera,
+            { width: nativeWidth, height: nativeHeight },
+            activeScene?.layers || [],
+          );
+          return (
+            <div
+              key={layer.id}
               style={{
-                width: "100%",
-                height: "100%",
-                background: "rgba(0, 0, 0, 0.8)",
-                color: selectedLayer.text.color || "#ffffff",
-                fontFamily: selectedLayer.text.fontFamily || "Inter, sans-serif",
-                fontSize: `${(selectedLayer.text.fontSize || 32) * scaleFactor}px`,
-                textAlign: selectedLayer.text.align || "left",
-                border: "1.5px solid #38bdf8",
-                borderRadius: "2px",
-                outline: "none",
-                padding: "2px 4px",
-                resize: "none",
-                overflow: "hidden",
-                lineHeight: "1.2",
+                position: "absolute",
+                left: `${screen.x * scaleFactor}px`,
+                top: `${screen.y * scaleFactor}px`,
+                width: `${screen.width * scaleFactor}px`,
+                height: `${screen.height * scaleFactor}px`,
+                transform: `rotate(${screen.rotation}deg)`,
+                transformOrigin: "center center",
+                border: "1px dashed #38bdf8",
+                pointerEvents: "none",
+                boxSizing: "border-box",
               }}
             />
-          </div>
-        )}
+          );
+        })}
+
+        {/* Single Selection Bounding Box and Resize/Rotate Handles */}
+        {selectedLayer && selectedLayer.visible && !editingTextLayerId && (() => {
+          const currentCamera = sampleCamera(
+            activeScene?.camera || { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 },
+            activeScene?.animationBlocks || [],
+            currentFrame,
+          );
+          const screen = getScreenTransform(
+            selectedLayer,
+            activeScene?.animationBlocks || [],
+            currentFrame,
+            currentCamera,
+            { width: nativeWidth, height: nativeHeight },
+            activeScene?.layers || [],
+          );
+          return (
+            <div
+              style={{
+                position: "absolute",
+                left: `${screen.x * scaleFactor}px`,
+                top: `${screen.y * scaleFactor}px`,
+                width: `${screen.width * scaleFactor}px`,
+                height: `${screen.height * scaleFactor}px`,
+                transform: `rotate(${screen.rotation}deg)`,
+                transformOrigin: "center center",
+                border: "1.5px solid #38bdf8",
+                pointerEvents: "none",
+                boxSizing: "border-box",
+              }}
+            >
+              {/* Rotation Handle Stalk and Knob */}
+              <div
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: "-22px",
+                  width: "1px",
+                  height: "22px",
+                  background: "#38bdf8",
+                  pointerEvents: "none",
+                }}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  left: "50%",
+                  top: "-22px",
+                  transform: "translate(-50%, -50%)",
+                  width: "8px",
+                  height: "8px",
+                  background: "#ffffff",
+                  border: "1.5px solid #0284c7",
+                  borderRadius: "50%",
+                  cursor: "grab",
+                  pointerEvents: "auto",
+                }}
+                onPointerDown={(e) => startRotate(e, selectedLayer)}
+                title="Rotate layer (drag to rotate, Shift to snap 15°)"
+              />
+
+              {/* 8 Resize Handles */}
+              {(
+                [
+                  { handle: "nw", x: 0, y: 0, cursor: "nwse-resize" },
+                  { handle: "n", x: 50, y: 0, cursor: "ns-resize" },
+                  { handle: "ne", x: 100, y: 0, cursor: "nesw-resize" },
+                  { handle: "e", x: 100, y: 50, cursor: "ew-resize" },
+                  { handle: "se", x: 100, y: 100, cursor: "nwse-resize" },
+                  { handle: "s", x: 50, y: 100, cursor: "ns-resize" },
+                  { handle: "sw", x: 0, y: 100, cursor: "nesw-resize" },
+                  { handle: "w", x: 0, y: 50, cursor: "ew-resize" },
+                ] as const
+              ).map(({ handle, x, y, cursor }) => (
+                <div
+                  key={handle}
+                  style={{
+                    position: "absolute",
+                    left: `${x}%`,
+                    top: `${y}%`,
+                    transform: "translate(-50%, -50%)",
+                    width: "7px",
+                    height: "7px",
+                    background: "#ffffff",
+                    border: "1.5px solid #0284c7",
+                    borderRadius: "1px",
+                    cursor,
+                    pointerEvents: "auto",
+                  }}
+                  onPointerDown={(e) => startResize(e, handle, selectedLayer)}
+                />
+              ))}
+            </div>
+          );
+        })()}
+
+        {/* Inline Text Editor Overlay */}
+        {editingTextLayerId && selectedLayer && selectedLayer.text && (() => {
+          const currentCamera = sampleCamera(
+            activeScene?.camera || { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 },
+            activeScene?.animationBlocks || [],
+            currentFrame,
+          );
+          const screen = getScreenTransform(
+            selectedLayer,
+            activeScene?.animationBlocks || [],
+            currentFrame,
+            currentCamera,
+            { width: nativeWidth, height: nativeHeight },
+            activeScene?.layers || [],
+          );
+          return (
+            <div
+              style={{
+                position: "absolute",
+                left: `${screen.x * scaleFactor}px`,
+                top: `${screen.y * scaleFactor}px`,
+                width: `${Math.max(100, screen.width * scaleFactor)}px`,
+                minHeight: `${screen.height * scaleFactor}px`,
+                transform: `rotate(${screen.rotation}deg)`,
+                transformOrigin: "center center",
+                zIndex: 10,
+              }}
+            >
+              <textarea
+                ref={textInputRef}
+                value={editingTextValue}
+                onChange={(e) => setEditingTextValue(e.target.value)}
+                onBlur={commitTextEdit}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    commitTextEdit();
+                  } else if (e.key === "Escape") {
+                    setEditingTextLayerId(null);
+                  }
+                }}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  background: "rgba(0, 0, 0, 0.8)",
+                  color: selectedLayer.text.color || "#ffffff",
+                  fontFamily: selectedLayer.text.fontFamily || "Inter, sans-serif",
+                  fontSize: `${(selectedLayer.text.fontSize || 32) * screen.scale * scaleFactor}px`,
+                  textAlign: selectedLayer.text.align || "left",
+                  border: "1.5px solid #38bdf8",
+                  borderRadius: "2px",
+                  outline: "none",
+                  padding: "2px 4px",
+                  resize: "none",
+                  overflow: "hidden",
+                  lineHeight: "1.2",
+                }}
+              />
+            </div>
+          );
+        })()}
+
+        {/* Interactive Canvas Focus Pill */}
+        <div
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-15 flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0d1217]/95 border border-[#10b981]/60 shadow-xl text-[9px] font-mono select-none backdrop-blur-xs cursor-ew-resize hover:bg-[#131d24] hover:border-[#34d399] transition-all group"
+          title="Click and drag horizontally to shift Camera Focus Distance"
+          data-testid="canvas-focus-pill"
+          onPointerDown={handleFocusPillPointerDown}
+        >
+          <Crosshair size={11} className="text-[#34d399] group-hover:rotate-90 transition-transform duration-300" />
+          <span className="text-[#94a3b8] font-sans">Focus:</span>
+          <span className="text-[#34d399] font-bold">{Math.round(activeScene?.camera?.focusDistance ?? 1000)}px</span>
+          <span className="text-[7.5px] text-[#6ee7b7]/70 hidden sm:inline">(drag ↔)</span>
+        </div>
       </div>
+
+      {/* Dev-Only FPS and Pipeline Performance Counter */}
+      {import.meta.env.DEV && (
+        <div
+          className="absolute top-2.5 left-2.5 z-20 px-2.5 py-1 rounded bg-[#0b0f14]/90 border border-[#222834] text-[9.5px] font-mono flex items-center gap-2 shadow-md pointer-events-none select-none backdrop-blur-xs"
+          data-testid="dev-fps-counter"
+        >
+          <div
+            className={`w-1.5 h-1.5 rounded-full ${
+              fps >= 45 ? "bg-emerald-400 animate-pulse" : fps >= 25 ? "bg-amber-400" : "bg-rose-500"
+            }`}
+          />
+          <span className="text-[#64748b]">FPS:</span>
+          <span
+            className={`font-semibold ${
+              fps >= 45 ? "text-emerald-400" : fps >= 25 ? "text-amber-400" : "text-rose-400"
+            }`}
+          >
+            {fps}
+          </span>
+          {bloom?.enabled && (
+            <span className="px-1 py-0.2 rounded bg-[#581c87]/70 text-[#d8b4fe] text-[7.5px] font-sans border border-[#9333ea]/40">
+              Bloom ON
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Floating Zoom Control Dropdown */}
       <div ref={zoomControlRef} className="zoom-control-wrapper">
