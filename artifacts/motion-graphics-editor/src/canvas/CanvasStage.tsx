@@ -70,6 +70,8 @@ import {
   importImageFile,
   addAssetToCanvas,
 } from "../lib/svg-importer";
+import { decodeAudioFile } from "../lib/audio-manager";
+import { SocialSafeZonesOverlay, type SafeZoneMode } from "./SocialSafeZonesOverlay";
 import { R3FSceneCanvas, type R3FSceneCanvasRef } from "./r3f/R3FSceneCanvas";
 import { R3FSnapGuides } from "./r3f/R3FSnapGuides";
 
@@ -247,6 +249,69 @@ export function CanvasStage() {
   const [zoomDropdownOpen, setZoomDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const [safeZoneMode, setSafeZoneMode] = useState<SafeZoneMode>("none");
+
+  // Figma Vector / System Clipboard Paste Listener
+  useEffect(() => {
+    const handleClipboardPaste = async (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+
+      const clipboardData = e.clipboardData;
+      if (!clipboardData) return;
+
+      // 1. Check for SVG markup in clipboard (Figma "Copy as SVG" produces text/html or text/plain)
+      const htmlText = clipboardData.getData("text/html");
+      const plainText = clipboardData.getData("text/plain");
+
+      let svgText = "";
+      if (htmlText && htmlText.includes("<svg")) {
+        const match = htmlText.match(/<svg[\s\S]*?<\/svg>/i);
+        if (match) svgText = match[0];
+      } else if (plainText && isSvgContent(plainText)) {
+        svgText = plainText;
+      }
+
+      if (svgText) {
+        e.preventDefault();
+        try {
+          const parsed = parseSvgToLayers(svgText);
+          if (parsed && parsed.layers.length > 0) {
+            useEditorStore.getState().addImportedLayers(parsed.layers, [parsed.groupId]);
+            return;
+          }
+        } catch (err) {
+          console.warn("Figma SVG paste error:", err);
+        }
+      }
+
+      // 2. Check for image files in clipboard
+      const items = Array.from(clipboardData.items);
+      const imageItem = items.find((it) => it.type.startsWith("image/"));
+      if (imageItem) {
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (file) {
+          try {
+            await importImageFile(file);
+            return;
+          } catch (err) {
+            console.warn("Clipboard image paste error:", err);
+          }
+        }
+      }
+    };
+
+    window.addEventListener("paste", handleClipboardPaste);
+    return () => window.removeEventListener("paste", handleClipboardPaste);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -800,6 +865,26 @@ export function CanvasStage() {
 
           // Import raster image (or non-parsed SVG)
           await importImageFile(file);
+        } else if (
+          file.type.startsWith("audio/") ||
+          /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(file.name)
+        ) {
+          // Import soundtrack file with waveform decoding
+          try {
+            const decoded = await decodeAudioFile(file);
+            useEditorStore.getState().setAudioTrack(activeScene.id, {
+              id: `audio-${Date.now()}`,
+              name: file.name.replace(/\.[^/.]+$/, ""),
+              url: decoded.url,
+              duration: decoded.duration,
+              volume: 1,
+              muted: false,
+              offsetFrames: 0,
+              waveformData: decoded.waveformData,
+            });
+          } catch (err) {
+            console.warn("Failed to decode dropped audio file:", err);
+          }
         }
       }
     }
@@ -1690,6 +1775,14 @@ export function CanvasStage() {
           camera={activeScene?.camera}
         />
 
+        {/* Social Safe Zones Overlay (TikTok / Reels 9:16 & YouTube 16:9) */}
+        <SocialSafeZonesOverlay
+          aspectRatio={aspectRatio}
+          mode={safeZoneMode}
+          width={nativeWidth}
+          height={nativeHeight}
+        />
+
         {/* Drag & Drop Canvas Visual Indicator Overlay */}
         {isDragOver && (
           <div
@@ -2067,6 +2160,40 @@ export function CanvasStage() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Social Safe-Zones Quick Toggle */}
+      <div className="absolute bottom-2.5 left-2.5 z-20 flex items-center gap-1">
+        <button
+          type="button"
+          data-testid="button-toggle-safe-zones"
+          onClick={() =>
+            setSafeZoneMode((prev) =>
+              prev === "none"
+                ? "auto"
+                : prev === "auto"
+                ? aspectRatio === "9:16"
+                  ? "tiktok-9:16"
+                  : "youtube-16:9"
+                : "none",
+            )
+          }
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-medium border shadow-md transition-colors backdrop-blur-xs ${
+            safeZoneMode !== "none"
+              ? "bg-[#082f49]/90 text-[#38bdf8] border-[#0284c7]/70"
+              : "bg-[#111317]/90 text-[#9ca3af] hover:text-[#d1d5db] border-[#22252c]"
+          }`}
+          title="Toggle Social Media Safe-Zone Guides (TikTok / Reels / YouTube UI overlays)"
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              safeZoneMode !== "none" ? "bg-[#38bdf8] animate-pulse" : "bg-[#4b5563]"
+            }`}
+          />
+          <span>
+            Safe Zones: {safeZoneMode === "none" ? "Off" : safeZoneMode === "auto" ? "Auto" : safeZoneMode}
+          </span>
+        </button>
       </div>
     </div>
   );

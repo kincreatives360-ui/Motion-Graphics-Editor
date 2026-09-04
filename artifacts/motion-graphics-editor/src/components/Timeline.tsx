@@ -18,7 +18,11 @@ import {
   Camera as CameraIcon,
   AlertTriangle,
   Diamond,
+  Volume2,
+  VolumeX,
+  Music,
 } from "lucide-react";
+import { decodeAudioFile, syncAudioPlayback, stopAudioPlayback } from "../lib/audio-manager";
 import { useEditorStore, useEditorUIStore, type Layer } from "../store/editor-store";
 import {
   type AnimationBlock,
@@ -71,6 +75,9 @@ export function Timeline() {
   const removeKeyframe = useEditorStore((s) => s.removeKeyframe);
   const toggleLayerVisibility = useEditorStore((s) => s.toggleLayerVisibility);
   const toggleLayerLock = useEditorStore((s) => s.toggleLayerLock);
+  const setAudioTrack = useEditorStore((s) => s.setAudioTrack);
+  const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
+  const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
 
   const [zoomLevel, setZoomLevel] = useState("54");
   const [expandedLayers, setExpandedLayers] = useState<Record<string, boolean>>({});
@@ -80,6 +87,10 @@ export function Timeline() {
     layerId: string | null;
     frame: number;
   } | null>(null);
+
+  const audioFileInputRef = useRef<HTMLInputElement>(null);
+  const audioDragRef = useRef<{ startX: number; initialOffset: number } | null>(null);
+  const [isDraggingAudio, setIsDraggingAudio] = useState(false);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const leftHeadersRef = useRef<HTMLDivElement>(null);
@@ -138,6 +149,23 @@ export function Timeline() {
     const secs = Math.floor(totalSeconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  // Synchronize soundtrack audio playback with canvas timeline playhead
+  useEffect(() => {
+    syncAudioPlayback(
+      activeScene?.audioTrack,
+      playing,
+      currentFrame,
+      activeScene?.fps || 30,
+    );
+  }, [playing, currentFrame, activeScene?.audioTrack, activeScene?.fps]);
+
+  // Stop soundtrack audio playback on unmount
+  useEffect(() => {
+    return () => {
+      stopAudioPlayback();
+    };
+  }, []);
 
   // Convert clientX in ruler/tracks to frame
   const getFrameFromClientX = useCallback(
@@ -584,6 +612,96 @@ export function Timeline() {
             </DropdownMenu>
           </div>
 
+          {/* Pinned Audio Lane Header */}
+          <div
+            className="h-7 px-2 flex items-center justify-between border-b border-[#20252e] text-[9.5px] bg-[#161226]/90 transition-colors"
+            data-testid="timeline-audio-lane-header"
+            title="Audio Soundtrack Track"
+          >
+            <div className="flex items-center gap-1.5 truncate">
+              <Music size={11} className="text-[#a78bfa] flex-shrink-0" />
+              <span className="font-medium text-[#f5f3ff] truncate max-w-[70px]">
+                {activeScene?.audioTrack?.name || "Audio"}
+              </span>
+              {activeScene?.audioTrack && (
+                <span className="text-[7.5px] text-[#c4b5fd]/70 font-mono">
+                  {activeScene.audioTrack.duration.toFixed(1)}s
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1">
+              {activeScene?.audioTrack ? (
+                <>
+                  <button
+                    type="button"
+                    className="w-4 h-4 rounded hover:bg-[#2e1065] text-[#c4b5fd] hover:text-white flex items-center justify-center transition-colors"
+                    title={activeScene.audioTrack.muted ? "Unmute audio" : "Mute audio"}
+                    onClick={() =>
+                      updateAudioTrack(activeSceneId, {
+                        muted: !activeScene.audioTrack?.muted,
+                      })
+                    }
+                    data-testid="button-toggle-audio-mute"
+                  >
+                    {activeScene.audioTrack.muted ? (
+                      <VolumeX size={10} className="text-rose-400" />
+                    ) : (
+                      <Volume2 size={10} />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="w-4 h-4 rounded hover:bg-[#4c0519] text-[#f43f5e] hover:text-[#fda4af] flex items-center justify-center transition-colors"
+                    title="Remove audio track"
+                    onClick={() => removeAudioTrack(activeSceneId)}
+                    data-testid="button-remove-audio-track"
+                  >
+                    <Trash2 size={9} />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="w-4 h-4 rounded hover:bg-[#2e1065] text-[#a78bfa] hover:text-white flex items-center justify-center transition-colors"
+                    title="Add soundtrack (.mp3, .wav)"
+                    onClick={() => audioFileInputRef.current?.click()}
+                    data-testid="button-add-audio-track"
+                  >
+                    <Plus size={10} />
+                  </button>
+                  <input
+                    ref={audioFileInputRef}
+                    type="file"
+                    accept="audio/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        try {
+                          const decoded = await decodeAudioFile(file);
+                          setAudioTrack(activeSceneId, {
+                            id: `audio-${Date.now()}`,
+                            name: file.name.replace(/\.[^/.]+$/, ""),
+                            url: decoded.url,
+                            duration: decoded.duration,
+                            volume: 1,
+                            muted: false,
+                            offsetFrames: 0,
+                            waveformData: decoded.waveformData,
+                          });
+                        } catch (err) {
+                          console.warn("Failed to load audio file:", err);
+                        }
+                      }
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          </div>
+
           {/* Layer Row Headers */}
           <div
             id="timeline-headers-container"
@@ -950,6 +1068,116 @@ export function Timeline() {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Pinned Audio Lane Track */}
+            <div
+              className="h-7 border-b border-[#20252e] relative bg-[#120e20]/80 overflow-hidden"
+              data-testid="timeline-audio-lane-track"
+            >
+              {/* Frame grid markings */}
+              {Array.from({ length: ticksCount + 1 }).map((_, i) => {
+                const tickFrame = i * majorTickStep;
+                if (tickFrame > durationFrames) return null;
+                return (
+                  <div
+                    key={`audio-grid-${tickFrame}`}
+                    className="absolute top-0 bottom-0 w-[1px] bg-[#2e1065]/30 pointer-events-none"
+                    style={{ left: `${tickFrame * pxPerFrame}px` }}
+                  />
+                );
+              })}
+
+              {/* Audio Waveform Clip */}
+              {activeScene?.audioTrack && (() => {
+                const track = activeScene.audioTrack;
+                const audioLeft = (track.offsetFrames || 0) * pxPerFrame;
+                const audioWidth = Math.max(30, (track.duration * fps) * pxPerFrame);
+
+                return (
+                  <div
+                    className="absolute top-1 bottom-1 rounded border border-[#8b5cf6]/80 bg-[#4c1d95]/70 hover:bg-[#5b21b6]/80 text-[#ede9fe] shadow-sm flex items-center px-1 cursor-grab active:cursor-grabbing text-[8px] font-medium select-none overflow-hidden transition-all z-10"
+                    style={{
+                      left: `${audioLeft}px`,
+                      width: `${audioWidth}px`,
+                    }}
+                    title={`${track.name} (${track.duration.toFixed(1)}s) - Drag horizontally to sync beat`}
+                    data-testid="timeline-audio-waveform-clip"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      audioDragRef.current = {
+                        startX: e.clientX,
+                        initialOffset: track.offsetFrames || 0,
+                      };
+                      setIsDraggingAudio(true);
+
+                      const onPointerMove = (moveEvent: PointerEvent) => {
+                        if (!audioDragRef.current) return;
+                        const deltaPx = moveEvent.clientX - audioDragRef.current.startX;
+                        const deltaFrames = Math.round(deltaPx / pxPerFrame);
+                        const newOffset = audioDragRef.current.initialOffset + deltaFrames;
+                        updateAudioTrack(activeSceneId, { offsetFrames: newOffset });
+                      };
+
+                      const onPointerUp = () => {
+                        audioDragRef.current = null;
+                        setIsDraggingAudio(false);
+                        window.removeEventListener("pointermove", onPointerMove);
+                        window.removeEventListener("pointerup", onPointerUp);
+                      };
+
+                      window.addEventListener("pointermove", onPointerMove);
+                      window.addEventListener("pointerup", onPointerUp);
+                    }}
+                  >
+                    {/* SVG Waveform Visualization */}
+                    <div className="absolute inset-0 flex items-center px-1 opacity-80 pointer-events-none">
+                      <svg
+                        className="w-full h-4"
+                        preserveAspectRatio="none"
+                        viewBox={`0 0 ${track.waveformData?.length || 100} 24`}
+                      >
+                        {(track.waveformData || []).map((peak, idx) => {
+                          const barHeight = Math.max(2, peak * 22);
+                          const y = (24 - barHeight) / 2;
+                          return (
+                            <rect
+                              key={idx}
+                              x={idx}
+                              y={y}
+                              width="0.85"
+                              height={barHeight}
+                              fill={track.muted ? "#94a3b8" : "#c4b5fd"}
+                              rx="0.3"
+                            />
+                          );
+                        })}
+                      </svg>
+                    </div>
+
+                    {/* Audio Title badge */}
+                    <span className="relative z-10 px-1 py-0.5 rounded bg-[#2e1065]/90 text-[7.5px] font-mono text-[#f5f3ff] truncate border border-[#7c3aed]/40 flex items-center gap-1">
+                      <Music size={7} className="text-[#a78bfa]" />
+                      <span>{track.name}</span>
+                      {track.offsetFrames !== 0 && (
+                        <span className="text-[#c4b5fd]/80">
+                          ({track.offsetFrames > 0 ? `+${track.offsetFrames}` : track.offsetFrames}f)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {!activeScene?.audioTrack && (
+                <div
+                  className="absolute inset-0 flex items-center px-3 text-[8px] text-[#7c3aed]/70 italic cursor-pointer hover:text-[#c4b5fd] transition-colors"
+                  onClick={() => audioFileInputRef.current?.click()}
+                >
+                  <span>+ Click to import soundtrack audio file (.mp3, .wav, .m4a) with waveform sync</span>
+                </div>
+              )}
             </div>
 
             {/* Per-Layer Lanes Container */}

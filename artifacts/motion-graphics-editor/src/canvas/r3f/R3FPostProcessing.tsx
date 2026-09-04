@@ -5,9 +5,19 @@ import {
   Vignette,
   ChromaticAberration,
   Noise,
+  DepthOfField,
 } from "@react-three/postprocessing";
 import * as THREE from "three";
-import type { BloomSettings, OpticsSettings, SceneEffect, BloomEffect, VignetteEffect, FilmGrainEffect, ChromaticAberrationEffect } from "../../store/editor-store";
+import type {
+  BloomSettings,
+  OpticsSettings,
+  SceneEffect,
+  BloomEffect,
+  VignetteEffect,
+  FilmGrainEffect,
+  ChromaticAberrationEffect,
+  DepthOfFieldEffect,
+} from "../../store/editor-store";
 
 export interface R3FPostProcessingProps {
   bloom?: BloomSettings;
@@ -21,6 +31,7 @@ export function R3FPostProcessing({ bloom: legacyBloom, optics: legacyOptics, ef
   const vignetteFx = effects?.find((e): e is VignetteEffect => e.type === "vignette" && e.enabled && e.visible);
   const grainFx = effects?.find((e): e is FilmGrainEffect => e.type === "filmGrain" && e.enabled && e.visible);
   const chromaFx = effects?.find((e): e is ChromaticAberrationEffect => e.type === "chromaticAberration" && e.enabled && e.visible);
+  const dofFx = effects?.find((e): e is DepthOfFieldEffect => e.type === "depthOfField" && e.enabled && e.visible);
 
   const bloom = bloomFx ? {
     enabled: true,
@@ -39,8 +50,9 @@ export function R3FPostProcessing({ bloom: legacyBloom, optics: legacyOptics, ef
   const hasVignette = Boolean((optics?.vignette ?? 0) > 0.01);
   const hasChroma = Boolean((optics?.chromaticAberration ?? 0) > 0.01);
   const hasGrain = Boolean((optics?.filmGrain ?? 0) > 0.01);
+  const hasDof = Boolean(dofFx);
 
-  if (!hasBloom && !hasVignette && !hasChroma && !hasGrain) {
+  if (!hasBloom && !hasVignette && !hasChroma && !hasGrain && !hasDof) {
     return null;
   }
 
@@ -79,6 +91,14 @@ export function R3FPostProcessing({ bloom: legacyBloom, optics: legacyOptics, ef
       {hasGrain && (
         <Noise
           opacity={(optics?.filmGrain ?? 0.2) * 0.5}
+        />
+      )}
+
+      {hasDof && dofFx && (
+        <DepthOfField
+          focusDistance={dofFx.focusRange ? dofFx.focusRange / 1000 : 0.02}
+          focalLength={dofFx.aperture ? dofFx.aperture * 5 : 48}
+          bokehScale={dofFx.bokehScale ?? 2}
         />
       )}
     </EffectComposer>
