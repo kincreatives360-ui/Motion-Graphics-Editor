@@ -340,6 +340,11 @@ export function R3FLayerMesh({
   }, [layer.type, layer.shape, width, height, radius, isEllipse, opacity, dofBlur]);
 
   return (
+    <group
+      position={position}
+      rotation={rotation}
+      scale={[layer.transform.flipX ? -1 : 1, layer.transform.flipY ? -1 : 1, 1]}
+    >
     <group position={position} rotation={rotation}>
       {/* 3D Realistic Device Enclosure (iPhone 16 Pro, MacBook Pro, Safari Browser) */}
       {layer.mockup && layer.mockup !== "none" && (

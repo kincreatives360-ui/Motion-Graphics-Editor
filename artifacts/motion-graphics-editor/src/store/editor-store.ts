@@ -9,7 +9,7 @@ import type {
   Keyframe,
   KeyframeTrackBlock,
 } from "./animation-blocks";
-import { isKeyframeTrack } from "./animation-blocks";
+import { isKeyframeTrack, sampleKeyframeTrack } from "./animation-blocks";
 import type { AnimationPreset, SceneTemplate } from "../presets/preset-library";
 
 export type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never;
@@ -37,6 +37,8 @@ export interface Transform {
   rotateX?: number; // degrees (-80 to 80, 3D tilt/pitch)
   rotateY?: number; // degrees (-80 to 80, 3D swivel/yaw)
   depth: number; // 0 = camera plane, positive = further away
+  flipX?: boolean;
+  flipY?: boolean;
 }
 
 export type LayerEffectType =
@@ -433,10 +435,12 @@ export type ToolId =
   | "tilt"
   | "move"
   | "scissors"
+  | "rectangle"
+  | "ellipse"
+  | "line"
+  | "arrow"
   | "shape"
   | "text"
-  | "node"
-  | "grid"
   | "camera";
 export type BackgroundMode = "Color" | "Image" | "Shader";
 
@@ -462,12 +466,29 @@ export interface EditorStoreState extends EditorDocument {
   reorderLayers: (sceneId: string, orderedLayers: Layer[]) => void;
   reparentLayer: (layerId: string, newParentId: string | null, targetIndex?: number) => void;
   groupSelectedLayers: () => string | null;
+  ungroupSelectedLayers: () => string[];
+  bringLayerForward: (sceneId?: string, layerId?: string) => void;
+  sendLayerBackward: (sceneId?: string, layerId?: string) => void;
+  bringLayerToFront: (sceneId?: string, layerId?: string) => void;
+  sendLayerToBack: (sceneId?: string, layerId?: string) => void;
+  alignLeft: () => void;
+  alignRight: () => void;
+  alignTop: () => void;
+  alignBottom: () => void;
+  alignCenterHorizontal: () => void;
+  alignCenterVertical: () => void;
+  flipHorizontal: () => void;
+  flipVertical: () => void;
   duplicateSelectedLayers: () => string[];
   nudgeSelectedLayers: (dx: number, dy: number) => void;
   pasteLayers: (layers: Layer[]) => string[];
   selectLayers: (ids: string[]) => void;
   setActiveScene: (id: string) => void;
   addScene: (scene?: Partial<Scene>) => string;
+  updateScene: (sceneId: string, partial: Partial<Scene>) => void;
+  reorderScenes: (fromIndex: number, toIndex: number) => void;
+  deleteScene: (sceneId: string) => void;
+  duplicateScene: (sceneId: string) => string;
   moveLayerDepth: (id: string, delta: number) => void;
   updateCamera: (partial: Partial<Camera>, sceneId?: string) => void;
   resetCamera: (sceneId?: string) => void;
@@ -528,6 +549,18 @@ export interface EditorStoreState extends EditorDocument {
     blockId: string,
     frame: number,
   ) => void;
+  recordKeyframe: (
+    layerId: string,
+    property: AnimatableProperty,
+    value: number | string,
+    frame?: number,
+    sceneId?: string,
+  ) => void;
+  toggleSelectedLayersVisibility: () => void;
+  setSelectedLayersOpacity: (opacity: number) => void;
+  splitBlocksAtPlayhead: (frame?: number, sceneId?: string) => void;
+  trimInPointAtPlayhead: (frame?: number, sceneId?: string) => void;
+  trimOutPointAtPlayhead: (frame?: number, sceneId?: string) => void;
   applyAnimationPreset: (preset: AnimationPreset) => void;
   applySceneTemplate: (template: SceneTemplate, mode: "new" | "merge") => string;
   setAudioTrack: (sceneId: string | undefined, track: AudioTrack | null) => void;
@@ -542,8 +575,13 @@ export interface EditorUIStoreState {
   playing: boolean;
   currentFrame: number;
   activeTool: ToolId;
+  animateMode: boolean;
+  setAnimateMode: (mode: boolean | ((prev: boolean) => boolean)) => void;
+  toggleAnimateMode: () => void;
   isCameraSelected: boolean;
   setIsCameraSelected: (selected: boolean) => void;
+  isLightSelected: boolean;
+  setIsLightSelected: (selected: boolean) => void;
   presetsOpen: boolean;
   presetsTab: "animations" | "templates";
   exportModalOpen: boolean;
@@ -562,6 +600,12 @@ export interface EditorUIStoreState {
   closePresets: () => void;
   setPresetsTab: (tab: "animations" | "templates") => void;
   setExportModalOpen: (open: boolean) => void;
+  helpOpen: boolean;
+  setHelpOpen: (open: boolean) => void;
+  timelineViewLevel: "all-scenes" | "scene-detail";
+  setTimelineViewLevel: (level: "all-scenes" | "scene-detail") => void;
+  timelineZoom: number; // 0 to 100
+  setTimelineZoom: (zoom: number | ((prev: number) => number)) => void;
 }
 
 const initialSceneId = "scene-1";
@@ -650,6 +694,39 @@ const initialScene: Scene = {
   effects: [],
   effectsOrder: [],
 };
+
+export function getLayerVisualAABB(layer: Layer) {
+  const { x, y, width, height, rotation } = layer.transform;
+  if (!rotation) {
+    return {
+      minX: x,
+      maxX: x + width,
+      minY: y,
+      maxY: y + height,
+      centerH: x + width / 2,
+      centerV: y + height / 2,
+    };
+  }
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const hw = width / 2;
+  const hh = height / 2;
+  const rad = (rotation * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+
+  const extentX = Math.abs(hw * cos) + Math.abs(hh * sin);
+  const extentY = Math.abs(hw * sin) + Math.abs(hh * cos);
+
+  return {
+    minX: cx - extentX,
+    maxX: cx + extentX,
+    minY: cy - extentY,
+    maxY: cy + extentY,
+    centerH: cx,
+    centerV: cy,
+  };
+}
 
 const initialDocument: EditorDocument = {
   projectName: "Untitled Project",
@@ -1122,6 +1199,98 @@ export const useEditorStore = create<EditorStoreState>()(
         }));
       },
 
+      bringLayerForward: (sceneId, layerId) => {
+        const state = get();
+        const scId = sceneId || state.activeSceneId;
+        const scene = state.scenes.find((s) => s.id === scId);
+        if (!scene || scene.layers.length <= 1) return;
+
+        const targetIds = layerId ? [layerId] : state.selectedLayerIds;
+        if (targetIds.length === 0) return;
+
+        const targetSet = new Set(targetIds);
+        const layers = [...scene.layers];
+        for (let i = layers.length - 2; i >= 0; i--) {
+          if (targetSet.has(layers[i].id) && !targetSet.has(layers[i + 1].id)) {
+            const temp = layers[i];
+            layers[i] = layers[i + 1];
+            layers[i + 1] = temp;
+          }
+        }
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === scId ? { ...sc, layers } : sc,
+          ),
+        }));
+      },
+
+      sendLayerBackward: (sceneId, layerId) => {
+        const state = get();
+        const scId = sceneId || state.activeSceneId;
+        const scene = state.scenes.find((s) => s.id === scId);
+        if (!scene || scene.layers.length <= 1) return;
+
+        const targetIds = layerId ? [layerId] : state.selectedLayerIds;
+        if (targetIds.length === 0) return;
+
+        const targetSet = new Set(targetIds);
+        const layers = [...scene.layers];
+        for (let i = 1; i < layers.length; i++) {
+          if (targetSet.has(layers[i].id) && !targetSet.has(layers[i - 1].id)) {
+            const temp = layers[i];
+            layers[i] = layers[i - 1];
+            layers[i - 1] = temp;
+          }
+        }
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === scId ? { ...sc, layers } : sc,
+          ),
+        }));
+      },
+
+      bringLayerToFront: (sceneId, layerId) => {
+        const state = get();
+        const scId = sceneId || state.activeSceneId;
+        const scene = state.scenes.find((s) => s.id === scId);
+        if (!scene || scene.layers.length <= 1) return;
+
+        const targetIds = layerId ? [layerId] : state.selectedLayerIds;
+        if (targetIds.length === 0) return;
+
+        const targetSet = new Set(targetIds);
+        const unselected = scene.layers.filter((l) => !targetSet.has(l.id));
+        const selected = scene.layers.filter((l) => targetSet.has(l.id));
+        const layers = [...unselected, ...selected];
+
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === scId ? { ...sc, layers } : sc,
+          ),
+        }));
+      },
+
+      sendLayerToBack: (sceneId, layerId) => {
+        const state = get();
+        const scId = sceneId || state.activeSceneId;
+        const scene = state.scenes.find((s) => s.id === scId);
+        if (!scene || scene.layers.length <= 1) return;
+
+        const targetIds = layerId ? [layerId] : state.selectedLayerIds;
+        if (targetIds.length === 0) return;
+
+        const targetSet = new Set(targetIds);
+        const unselected = scene.layers.filter((l) => !targetSet.has(l.id));
+        const selected = scene.layers.filter((l) => targetSet.has(l.id));
+        const layers = [...selected, ...unselected];
+
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === scId ? { ...sc, layers } : sc,
+          ),
+        }));
+      },
+
       reparentLayer: (layerId, newParentId, targetIndex) => {
         set((state) => {
           const scene = state.scenes.find((s) => s.id === state.activeSceneId);
@@ -1248,6 +1417,416 @@ export const useEditorStore = create<EditorStoreState>()(
         return groupId;
       },
 
+      ungroupSelectedLayers: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return [];
+
+        const selectedGroups = scene.layers.filter(
+          (l) => state.selectedLayerIds.includes(l.id) && l.type === "group",
+        );
+        if (selectedGroups.length === 0) return [];
+
+        let currentLayers = [...scene.layers];
+        const allUnparentedChildIds: string[] = [];
+
+        for (const group of selectedGroups) {
+          const groupParentId = group.parentId ?? null;
+          const groupIdx = currentLayers.findIndex((l) => l.id === group.id);
+          if (groupIdx === -1) continue;
+
+          // Find direct children of this group
+          const children = currentLayers.filter((l) => l.parentId === group.id);
+
+          const groupW = Math.max(1, group.transform.width);
+          const groupH = Math.max(1, group.transform.height);
+          const groupCX = group.transform.x + groupW / 2;
+          const groupCY = group.transform.y + groupH / 2;
+          const dRot = group.transform.rotation || 0;
+          const dRotRad = (dRot * Math.PI) / 180;
+          const cosRot = Math.cos(dRotRad);
+          const sinRot = Math.sin(dRotRad);
+
+          const reparentedChildren = children.map((child) => {
+            allUnparentedChildIds.push(child.id);
+            const childCX = child.transform.x + child.transform.width / 2;
+            const childCY = child.transform.y + child.transform.height / 2;
+            const relX = childCX - groupCX;
+            const relY = childCY - groupCY;
+            const rotRelX = relX * cosRot - relY * sinRot;
+            const rotRelY = relX * sinRot + relY * cosRot;
+            const newChildCX = groupCX + rotRelX;
+            const newChildCY = groupCY + rotRelY;
+
+            const composedOpacity = Math.max(
+              0,
+              Math.min(1, (child.opacity ?? 1) * (group.opacity ?? 1)),
+            );
+
+            return {
+              ...child,
+              parentId: groupParentId,
+              transform: {
+                ...child.transform,
+                x: Math.round(newChildCX - child.transform.width / 2),
+                y: Math.round(newChildCY - child.transform.height / 2),
+                rotation: Math.round((child.transform.rotation || 0) + dRot),
+                depth: (child.transform.depth || 0) + (group.transform.depth || 0),
+              },
+              opacity: composedOpacity,
+            };
+          });
+
+          // Remove the group and its direct children, and insert the reparented children at the group position
+          const remaining = currentLayers.filter(
+            (l) => l.id !== group.id && l.parentId !== group.id,
+          );
+          const insertPos = Math.min(groupIdx, remaining.length);
+          currentLayers = [
+            ...remaining.slice(0, insertPos),
+            ...reparentedChildren,
+            ...remaining.slice(insertPos),
+          ];
+        }
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId ? { ...sc, layers: currentLayers } : sc,
+          ),
+          selectedLayerIds: allUnparentedChildIds,
+        });
+
+        return allUnparentedChildIds;
+      },
+
+      alignLeft: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        let targetMinX: number;
+        if (selected.length >= 2) {
+          targetMinX = Math.min(...selected.map((l) => getLayerVisualAABB(l).minX));
+        } else {
+          targetMinX = 0; // frame left
+        }
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const aabb = getLayerVisualAABB(layer);
+                    const deltaX = targetMinX - aabb.minX;
+                    return {
+                      ...layer,
+                      transform: { ...layer.transform, x: Math.round(layer.transform.x + deltaX) },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
+      alignRight: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        let targetMaxX: number;
+        if (selected.length >= 2) {
+          targetMaxX = Math.max(...selected.map((l) => getLayerVisualAABB(l).maxX));
+        } else {
+          targetMaxX = state.aspectRatio === "9:16" ? 1080 : state.aspectRatio === "1:1" ? 1080 : 1920;
+        }
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const aabb = getLayerVisualAABB(layer);
+                    const deltaX = targetMaxX - aabb.maxX;
+                    return {
+                      ...layer,
+                      transform: { ...layer.transform, x: Math.round(layer.transform.x + deltaX) },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
+      alignTop: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        let targetMinY: number;
+        if (selected.length >= 2) {
+          targetMinY = Math.min(...selected.map((l) => getLayerVisualAABB(l).minY));
+        } else {
+          targetMinY = 0; // frame top
+        }
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const aabb = getLayerVisualAABB(layer);
+                    const deltaY = targetMinY - aabb.minY;
+                    return {
+                      ...layer,
+                      transform: { ...layer.transform, y: Math.round(layer.transform.y + deltaY) },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
+      alignBottom: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        let targetMaxY: number;
+        if (selected.length >= 2) {
+          targetMaxY = Math.max(...selected.map((l) => getLayerVisualAABB(l).maxY));
+        } else {
+          targetMaxY = state.aspectRatio === "9:16" ? 1920 : state.aspectRatio === "1:1" ? 1080 : 1080;
+        }
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const aabb = getLayerVisualAABB(layer);
+                    const deltaY = targetMaxY - aabb.maxY;
+                    return {
+                      ...layer,
+                      transform: { ...layer.transform, y: Math.round(layer.transform.y + deltaY) },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
+      alignCenterHorizontal: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        let targetCenterH: number;
+        if (selected.length >= 2) {
+          const minX = Math.min(...selected.map((l) => getLayerVisualAABB(l).minX));
+          const maxX = Math.max(...selected.map((l) => getLayerVisualAABB(l).maxX));
+          targetCenterH = (minX + maxX) / 2;
+        } else {
+          const frameW = state.aspectRatio === "9:16" ? 1080 : state.aspectRatio === "1:1" ? 1080 : 1920;
+          targetCenterH = frameW / 2;
+        }
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const aabb = getLayerVisualAABB(layer);
+                    const deltaX = targetCenterH - aabb.centerH;
+                    return {
+                      ...layer,
+                      transform: { ...layer.transform, x: Math.round(layer.transform.x + deltaX) },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
+      alignCenterVertical: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        let targetCenterV: number;
+        if (selected.length >= 2) {
+          const minY = Math.min(...selected.map((l) => getLayerVisualAABB(l).minY));
+          const maxY = Math.max(...selected.map((l) => getLayerVisualAABB(l).maxY));
+          targetCenterV = (minY + maxY) / 2;
+        } else {
+          const frameH = state.aspectRatio === "9:16" ? 1920 : state.aspectRatio === "1:1" ? 1080 : 1080;
+          targetCenterV = frameH / 2;
+        }
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const aabb = getLayerVisualAABB(layer);
+                    const deltaY = targetCenterV - aabb.centerV;
+                    return {
+                      ...layer,
+                      transform: { ...layer.transform, y: Math.round(layer.transform.y + deltaY) },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
+      flipHorizontal: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        if (selected.length === 1) {
+          const target = selected[0];
+          set({
+            scenes: state.scenes.map((sc) =>
+              sc.id === state.activeSceneId
+                ? {
+                    ...sc,
+                    layers: sc.layers.map((l) =>
+                      l.id === target.id
+                        ? {
+                            ...l,
+                            transform: { ...l.transform, flipX: !l.transform.flipX },
+                          }
+                        : l,
+                    ),
+                  }
+                : sc,
+            ),
+          });
+          return;
+        }
+
+        // Multi-layer flip: mirror positions around selection center
+        const minX = Math.min(...selected.map((l) => getLayerVisualAABB(l).minX));
+        const maxX = Math.max(...selected.map((l) => getLayerVisualAABB(l).maxX));
+        const selCenterH = (minX + maxX) / 2;
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const layerCX = layer.transform.x + layer.transform.width / 2;
+                    const newCX = 2 * selCenterH - layerCX;
+                    return {
+                      ...layer,
+                      transform: {
+                        ...layer.transform,
+                        x: Math.round(newCX - layer.transform.width / 2),
+                        rotation: layer.transform.rotation ? -layer.transform.rotation : 0,
+                        flipX: !layer.transform.flipX,
+                      },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
+      flipVertical: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selected = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (selected.length === 0) return;
+
+        if (selected.length === 1) {
+          const target = selected[0];
+          set({
+            scenes: state.scenes.map((sc) =>
+              sc.id === state.activeSceneId
+                ? {
+                    ...sc,
+                    layers: sc.layers.map((l) =>
+                      l.id === target.id
+                        ? {
+                            ...l,
+                            transform: { ...l.transform, flipY: !l.transform.flipY },
+                          }
+                        : l,
+                    ),
+                  }
+                : sc,
+            ),
+          });
+          return;
+        }
+
+        // Multi-layer flip: mirror positions around selection center
+        const minY = Math.min(...selected.map((l) => getLayerVisualAABB(l).minY));
+        const maxY = Math.max(...selected.map((l) => getLayerVisualAABB(l).maxY));
+        const selCenterV = (minY + maxY) / 2;
+
+        set({
+          scenes: state.scenes.map((sc) =>
+            sc.id === state.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((layer) => {
+                    if (!state.selectedLayerIds.includes(layer.id)) return layer;
+                    const layerCY = layer.transform.y + layer.transform.height / 2;
+                    const newCY = 2 * selCenterV - layerCY;
+                    return {
+                      ...layer,
+                      transform: {
+                        ...layer.transform,
+                        y: Math.round(newCY - layer.transform.height / 2),
+                        rotation: layer.transform.rotation ? -layer.transform.rotation : 0,
+                        flipY: !layer.transform.flipY,
+                      },
+                    };
+                  }),
+                }
+              : sc,
+          ),
+        });
+      },
+
       duplicateSelectedLayers: () => {
         const state = get();
         const scene = state.scenes.find((s) => s.id === state.activeSceneId);
@@ -1371,6 +1950,20 @@ export const useEditorStore = create<EditorStoreState>()(
             ),
           };
         });
+
+        if (useEditorUIStore.getState().animateMode) {
+          const state = get();
+          const activeScene = state.scenes.find((s) => s.id === state.activeSceneId);
+          if (activeScene) {
+            const currentFrame = useEditorUIStore.getState().currentFrame;
+            for (const l of activeScene.layers) {
+              if (state.selectedLayerIds.includes(l.id)) {
+                state.recordKeyframe(l.id, "x", l.transform.x, currentFrame, state.activeSceneId);
+                state.recordKeyframe(l.id, "y", l.transform.y, currentFrame, state.activeSceneId);
+              }
+            }
+          }
+        }
       },
 
       pasteLayers: (layers) => {
@@ -1425,6 +2018,7 @@ export const useEditorStore = create<EditorStoreState>()(
       selectLayers: (ids) => {
         if (ids.length > 0) {
           useEditorUIStore.getState().setIsCameraSelected(false);
+          useEditorUIStore.getState().setIsLightSelected(false);
           if (useEditorUIStore.getState().activeTool === "camera") {
             useEditorUIStore.getState().setActiveTool("scene");
           }
@@ -1463,6 +2057,63 @@ export const useEditorStore = create<EditorStoreState>()(
           selectedLayerIds: [],
         }));
 
+        return newSceneId;
+      },
+
+      updateScene: (sceneId, partial) => {
+        set((state) => ({
+          scenes: state.scenes.map((scene) =>
+            scene.id === sceneId ? { ...scene, ...partial } : scene,
+          ),
+        }));
+      },
+
+      reorderScenes: (fromIndex, toIndex) => {
+        const state = get();
+        if (
+          fromIndex < 0 ||
+          fromIndex >= state.scenes.length ||
+          toIndex < 0 ||
+          toIndex >= state.scenes.length ||
+          fromIndex === toIndex
+        ) {
+          return;
+        }
+        const updated = [...state.scenes];
+        const [moved] = updated.splice(fromIndex, 1);
+        updated.splice(toIndex, 0, moved);
+        set({ scenes: updated });
+      },
+
+      deleteScene: (sceneId) => {
+        const state = get();
+        if (state.scenes.length <= 1) return; // Keep at least 1 scene
+        const remaining = state.scenes.filter((s) => s.id !== sceneId);
+        const nextActiveId =
+          state.activeSceneId === sceneId ? remaining[0].id : state.activeSceneId;
+        set({
+          scenes: remaining,
+          activeSceneId: nextActiveId,
+          selectedLayerIds: state.activeSceneId === sceneId ? [] : state.selectedLayerIds,
+        });
+      },
+
+      duplicateScene: (sceneId) => {
+        const state = get();
+        const target = state.scenes.find((s) => s.id === sceneId);
+        if (!target) return "";
+        const newSceneId = `scene-${Date.now()}`;
+        const cloned: Scene = JSON.parse(JSON.stringify(target));
+        cloned.id = newSceneId;
+        cloned.name = `${target.name} (Copy)`;
+        const targetIndex = state.scenes.findIndex((s) => s.id === sceneId);
+        const updated = [...state.scenes];
+        updated.splice(targetIndex + 1, 0, cloned);
+        set({
+          scenes: updated,
+          activeSceneId: newSceneId,
+          selectedLayerIds: [],
+        });
         return newSceneId;
       },
 
@@ -2100,6 +2751,371 @@ export const useEditorStore = create<EditorStoreState>()(
         }));
       },
 
+      recordKeyframe: (layerId, property, value, frame, sceneId) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        const targetFrame =
+          frame !== undefined ? frame : useEditorUIStore.getState().currentFrame;
+        const scene = get().scenes.find((s) => s.id === targetSceneId);
+        if (!scene) return;
+        const layer = scene.layers.find((l) => l.id === layerId);
+        if (!layer) return;
+
+        const existingBlockIdx = scene.animationBlocks.findIndex(
+          (b) => isKeyframeTrack(b) && b.layerId === layerId && b.property === property,
+        );
+
+        if (existingBlockIdx !== -1) {
+          const block = scene.animationBlocks[existingBlockIdx] as KeyframeTrackBlock;
+          const existingKfIdx = block.keyframes.findIndex((k) => k.frame === targetFrame);
+          let updatedKeyframes: Keyframe<number | string>[];
+
+          if (existingKfIdx !== -1) {
+            updatedKeyframes = block.keyframes.map((k, idx) =>
+              idx === existingKfIdx ? { ...k, value } : k,
+            );
+          } else {
+            updatedKeyframes = [
+              ...block.keyframes,
+              {
+                frame: targetFrame,
+                value,
+                easing: "ease-in-out" as const,
+              },
+            ].sort((a, b) => a.frame - b.frame);
+          }
+
+          const startFrame = updatedKeyframes[0].frame;
+          const endFrame = Math.max(startFrame + 1, updatedKeyframes[updatedKeyframes.length - 1].frame);
+
+          const updatedBlock: KeyframeTrackBlock = {
+            ...block,
+            keyframes: updatedKeyframes,
+            startFrame,
+            endFrame,
+          };
+
+          set((state) => ({
+            scenes: state.scenes.map((s) =>
+              s.id === targetSceneId
+                ? {
+                    ...s,
+                    animationBlocks: s.animationBlocks.map((b, idx) =>
+                      idx === existingBlockIdx ? updatedBlock : b,
+                    ),
+                  }
+                : s,
+            ),
+          }));
+        } else {
+          let baselineValue: number | string = 0;
+          switch (property) {
+            case "x":
+              baselineValue = layer.transform.x;
+              break;
+            case "y":
+              baselineValue = layer.transform.y;
+              break;
+            case "width":
+              baselineValue = layer.transform.width;
+              break;
+            case "height":
+              baselineValue = layer.transform.height;
+              break;
+            case "rotation":
+              baselineValue = layer.transform.rotation || 0;
+              break;
+            case "depth":
+              baselineValue = layer.transform.depth || 0;
+              break;
+            case "rotateX":
+              baselineValue = layer.transform.rotateX || 0;
+              break;
+            case "rotateY":
+              baselineValue = layer.transform.rotateY || 0;
+              break;
+            case "opacity":
+              baselineValue = layer.opacity ?? 1;
+              break;
+            case "fill":
+              baselineValue = layer.shape?.fill ?? layer.text?.color ?? "#38bdf8";
+              break;
+            case "stroke":
+              baselineValue = layer.shape?.stroke ?? "#ffffff";
+              break;
+            case "fontSize":
+              baselineValue = layer.text?.fontSize ?? 32;
+              break;
+          }
+
+          let initialKeyframes: Keyframe<number | string>[];
+          let startFrame = 0;
+          let endFrame = 1;
+
+          if (targetFrame > 0) {
+            startFrame = Math.max(0, targetFrame - 30);
+            endFrame = targetFrame;
+            initialKeyframes = [
+              { frame: startFrame, value: baselineValue, easing: "ease-in-out" },
+              { frame: targetFrame, value, easing: "ease-in-out" },
+            ];
+          } else {
+            initialKeyframes = [{ frame: 0, value, easing: "ease-in-out" }];
+            endFrame = 1;
+          }
+
+          const newBlock: KeyframeTrackBlock = {
+            id: `kf-track-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            kind: "keyframe",
+            layerId,
+            property,
+            keyframes: initialKeyframes,
+            startFrame,
+            endFrame,
+            preset: property,
+          };
+
+          set((state) => ({
+            scenes: state.scenes.map((s) =>
+              s.id === targetSceneId
+                ? {
+                    ...s,
+                    animationBlocks: [...s.animationBlocks, newBlock],
+                  }
+                : s,
+            ),
+          }));
+        }
+      },
+
+      toggleSelectedLayersVisibility: () => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const selectedLayers = scene.layers.filter((l) => state.selectedLayerIds.includes(l.id));
+        if (!selectedLayers.length) return;
+        const anyVisible = selectedLayers.some((l) => l.visible);
+        const nextVisible = !anyVisible;
+        const selSet = new Set(state.selectedLayerIds);
+
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === s.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((l) =>
+                    selSet.has(l.id) ? { ...l, visible: nextVisible } : l
+                  ),
+                }
+              : sc,
+          ),
+        }));
+      },
+
+      setSelectedLayersOpacity: (opacity: number) => {
+        const state = get();
+        const scene = state.scenes.find((s) => s.id === state.activeSceneId);
+        if (!scene || state.selectedLayerIds.length === 0) return;
+        const clamped = Math.max(0, Math.min(1, opacity));
+        const ui = useEditorUIStore.getState();
+
+        if (ui.animateMode) {
+          state.selectedLayerIds.forEach((id) => {
+            state.recordKeyframe(id, "opacity", clamped, ui.currentFrame, state.activeSceneId);
+          });
+        }
+
+        const selSet = new Set(state.selectedLayerIds);
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === s.activeSceneId
+              ? {
+                  ...sc,
+                  layers: sc.layers.map((l) =>
+                    selSet.has(l.id) ? { ...l, opacity: clamped } : l
+                  ),
+                }
+              : sc,
+          ),
+        }));
+      },
+
+      splitBlocksAtPlayhead: (frame, sceneId) => {
+        const state = get();
+        const scId = sceneId || state.activeSceneId;
+        const scene = state.scenes.find((s) => s.id === scId);
+        if (!scene) return;
+        const targetFrame = frame ?? useEditorUIStore.getState().currentFrame;
+        const selLayerIds = state.selectedLayerIds;
+        const isCamera = useEditorUIStore.getState().isCameraSelected;
+
+        const candidateBlocks = (scene.animationBlocks || []).filter((b) => {
+          if (selLayerIds.length > 0) {
+            return b.layerId && selLayerIds.includes(b.layerId);
+          }
+          if (isCamera) {
+            return b.layerId === null;
+          }
+          return true;
+        });
+
+        const blocksToSplit = candidateBlocks.filter(
+          (b) => b.startFrame < targetFrame && b.endFrame > targetFrame,
+        );
+        if (blocksToSplit.length === 0) return;
+
+        const updatedBlocks = (scene.animationBlocks || []).flatMap((b) => {
+          if (!blocksToSplit.some((splitB) => splitB.id === b.id)) {
+            return [b];
+          }
+
+          if (isKeyframeTrack(b)) {
+            const kfTrack = b as KeyframeTrackBlock;
+            const sampledVal =
+              sampleKeyframeTrack(kfTrack, targetFrame) ?? (kfTrack.keyframes[0]?.value ?? 0);
+            const leftKeyframes = kfTrack.keyframes.filter((k) => k.frame < targetFrame);
+            const rightKeyframes = kfTrack.keyframes.filter((k) => k.frame > targetFrame);
+
+            const splitKf: Keyframe<number | string> = {
+              frame: targetFrame,
+              value: sampledVal,
+              easing: "ease-in-out",
+            };
+
+            const leftBlock: KeyframeTrackBlock = {
+              ...kfTrack,
+              id: kfTrack.id,
+              startFrame: kfTrack.startFrame,
+              endFrame: targetFrame,
+              keyframes: [...leftKeyframes, splitKf].sort((a, b) => a.frame - b.frame),
+            };
+
+            const rightBlock: KeyframeTrackBlock = {
+              ...kfTrack,
+              id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              startFrame: targetFrame,
+              endFrame: kfTrack.endFrame,
+              keyframes: [splitKf, ...rightKeyframes].sort((a, b) => a.frame - b.frame),
+            };
+
+            return [leftBlock, rightBlock];
+          } else {
+            const leftBlock: AnimationBlock = {
+              ...b,
+              endFrame: targetFrame,
+            };
+            const rightBlock: AnimationBlock = {
+              ...b,
+              id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+              startFrame: targetFrame,
+            };
+            return [leftBlock, rightBlock];
+          }
+        });
+
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === scId ? { ...sc, animationBlocks: updatedBlocks } : sc,
+          ),
+        }));
+      },
+
+      trimInPointAtPlayhead: (frame, sceneId) => {
+        const state = get();
+        const scId = sceneId || state.activeSceneId;
+        const scene = state.scenes.find((s) => s.id === scId);
+        if (!scene) return;
+        const targetFrame = frame ?? useEditorUIStore.getState().currentFrame;
+        const selLayerIds = state.selectedLayerIds;
+        const isCamera = useEditorUIStore.getState().isCameraSelected;
+
+        const updatedBlocks = (scene.animationBlocks || []).map((b) => {
+          const isTarget =
+            selLayerIds.length > 0
+              ? b.layerId && selLayerIds.includes(b.layerId)
+              : isCamera
+              ? b.layerId === null
+              : true;
+
+          if (!isTarget) return b;
+          if (b.startFrame < targetFrame && targetFrame < b.endFrame) {
+            if (isKeyframeTrack(b)) {
+              const kfTrack = b as KeyframeTrackBlock;
+              const sampledVal =
+                sampleKeyframeTrack(kfTrack, targetFrame) ?? (kfTrack.keyframes[0]?.value ?? 0);
+              const remainingKfs = kfTrack.keyframes.filter((k) => k.frame >= targetFrame);
+              const hasExact = remainingKfs.some((k) => k.frame === targetFrame);
+              const finalKfs = hasExact
+                ? remainingKfs
+                : [{ frame: targetFrame, value: sampledVal, easing: "ease-in-out" as const }, ...remainingKfs];
+              return {
+                ...kfTrack,
+                startFrame: targetFrame,
+                keyframes: finalKfs.sort((a, b) => a.frame - b.frame),
+              };
+            } else {
+              return {
+                ...b,
+                startFrame: targetFrame,
+              };
+            }
+          }
+          return b;
+        });
+
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === scId ? { ...sc, animationBlocks: updatedBlocks } : sc,
+          ),
+        }));
+      },
+
+      trimOutPointAtPlayhead: (frame, sceneId) => {
+        const state = get();
+        const scId = sceneId || state.activeSceneId;
+        const scene = state.scenes.find((s) => s.id === scId);
+        if (!scene) return;
+        const targetFrame = frame ?? useEditorUIStore.getState().currentFrame;
+        const selLayerIds = state.selectedLayerIds;
+        const isCamera = useEditorUIStore.getState().isCameraSelected;
+
+        const updatedBlocks = (scene.animationBlocks || []).map((b) => {
+          const isTarget =
+            selLayerIds.length > 0
+              ? b.layerId && selLayerIds.includes(b.layerId)
+              : isCamera
+              ? b.layerId === null
+              : true;
+
+          if (!isTarget) return b;
+          if (b.startFrame < targetFrame && targetFrame < b.endFrame) {
+            if (isKeyframeTrack(b)) {
+              const kfTrack = b as KeyframeTrackBlock;
+              const sampledVal =
+                sampleKeyframeTrack(kfTrack, targetFrame) ?? (kfTrack.keyframes[0]?.value ?? 0);
+              const remainingKfs = kfTrack.keyframes.filter((k) => k.frame <= targetFrame);
+              const hasExact = remainingKfs.some((k) => k.frame === targetFrame);
+              const finalKfs = hasExact
+                ? remainingKfs
+                : [...remainingKfs, { frame: targetFrame, value: sampledVal, easing: "ease-in-out" as const }];
+              return {
+                ...kfTrack,
+                endFrame: targetFrame,
+                keyframes: finalKfs.sort((a, b) => a.frame - b.frame),
+              };
+            } else {
+              return {
+                ...b,
+                endFrame: targetFrame,
+              };
+            }
+          }
+          return b;
+        });
+
+        set((s) => ({
+          scenes: s.scenes.map((sc) =>
+            sc.id === scId ? { ...sc, animationBlocks: updatedBlocks } : sc,
+          ),
       setAudioTrack: (sceneId, track) => {
         const targetSceneId = sceneId || get().activeSceneId;
         set((state) => ({
@@ -2195,13 +3211,29 @@ export const useEditorUIStore = create<EditorUIStoreState>()((set) => ({
   playing: false,
   currentFrame: 0,
   activeTool: "scene",
+  animateMode: false,
+  setAnimateMode: (mode) =>
+    set((state) => ({
+      animateMode: typeof mode === "function" ? mode(state.animateMode) : mode,
+    })),
+  toggleAnimateMode: () => set((state) => ({ animateMode: !state.animateMode })),
   isCameraSelected: false,
+  isLightSelected: false,
   presetsOpen: false,
   presetsTab: "animations",
   exportModalOpen: false,
+  timelineViewLevel: "scene-detail",
+  setTimelineViewLevel: (level) => set({ timelineViewLevel: level }),
 
   setIsCameraSelected: (selected) => {
-    set({ isCameraSelected: selected });
+    set({ isCameraSelected: selected, ...(selected ? { isLightSelected: false } : {}) });
+    if (selected) {
+      useEditorStore.getState().selectLayers([]);
+    }
+  },
+
+  setIsLightSelected: (selected) => {
+    set({ isLightSelected: selected, ...(selected ? { isCameraSelected: false } : {}) });
     if (selected) {
       useEditorStore.getState().selectLayers([]);
     }
@@ -2274,6 +3306,19 @@ export const useEditorUIStore = create<EditorUIStoreState>()((set) => ({
   setExportModalOpen: (open) => {
     set({ exportModalOpen: open });
   },
+
+  helpOpen: false,
+  setHelpOpen: (open) => {
+    set({ helpOpen: open });
+  },
+
+  timelineZoom: 54,
+  setTimelineZoom: (zoomOrFn) =>
+    set((state) => {
+      const next =
+        typeof zoomOrFn === "function" ? zoomOrFn(state.timelineZoom) : zoomOrFn;
+      return { timelineZoom: Math.max(0, Math.min(100, Math.round(next))) };
+    }),
 }));
 
 export function useEditorHistory() {

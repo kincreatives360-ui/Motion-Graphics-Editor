@@ -16,17 +16,20 @@ import {
   TextCursorInput,
   Camera as CameraIcon,
   ZoomIn,
+  CircleDot,
 } from "lucide-react";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEditorStore, useEditorUIStore, type ToolId } from "./store/editor-store";
 import { CanvasStage } from "./canvas/CanvasStage";
+import { ShapeSelectDropdown } from "./components/ShapeSelectDropdown";
 import { LayerTree } from "./components/LayerTree";
 import { AssetsPanel } from "./components/AssetsPanel";
 import { Inspector } from "./components/Inspector";
 import { Timeline } from "./components/Timeline";
 import { PresetsSheet } from "./components/PresetsSheet";
 import { ExportModal } from "./components/ExportModal";
+import { ShortcutsModal } from "./components/ShortcutsModal";
 import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
 import { Route, Switch, Link } from "wouter";
 import { R3FSpikeCanvas } from "./canvas/R3FSpikeCanvas";
@@ -70,6 +73,7 @@ function LeftPanel() {
   const addLayer = useEditorStore((state) => state.addLayer);
   const openPresets = useEditorUIStore((state) => state.openPresets);
   const saveStatus = useEditorUIStore((state) => state.saveStatus);
+  const setHelpOpen = useEditorUIStore((state) => state.setHelpOpen);
 
   return (
     <aside className="left-panel flex flex-col h-full overflow-hidden select-none" aria-label="Project files and assets">
@@ -134,7 +138,7 @@ function LeftPanel() {
       )}
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         {tab === "File" ? (
-          <LayerTree />
+          <LayerTree searchQuery={searchOpen ? searchQuery : ""} />
         ) : (
           <AssetsPanel searchQuery={searchOpen ? searchQuery : ""} />
         )}
@@ -183,6 +187,7 @@ function LeftPanel() {
             aria-label="Help"
             data-testid="button-help"
             title="Help & Shortcuts"
+            onClick={() => setHelpOpen(true)}
           >
             <Sparkles size={11} strokeWidth={1.7} />
           </button>
@@ -198,6 +203,8 @@ function Stage() {
   const playing = useEditorUIStore((state) => state.playing);
   const setPlaying = useEditorUIStore((state) => state.setPlaying);
   const setExportModalOpen = useEditorUIStore((state) => state.setExportModalOpen);
+  const animateMode = useEditorUIStore((state) => state.animateMode);
+  const toggleAnimateMode = useEditorUIStore((state) => state.toggleAnimateMode);
 
   const [selectDropdownOpen, setSelectDropdownOpen] = useState(false);
   const [useR3FSpikeCanvas, setUseR3FSpikeCanvas] = useState(false);
@@ -238,8 +245,7 @@ function Stage() {
   const CurrentIcon = currentSelectTool.Icon;
 
   const otherTools: Array<{ id: ToolId; label: string; icon: React.ReactNode }> = [
-    { id: "shape", label: "Add shape", icon: <SunMedium size={13} strokeWidth={1.6} /> },
-    { id: "text", label: "Add text", icon: <TextCursorInput size={13} strokeWidth={1.6} /> },
+    { id: "text", label: "Add text (T)", icon: <TextCursorInput size={13} strokeWidth={1.6} /> },
     { id: "camera", label: "Camera (3D & Focus)", icon: <CameraIcon size={13} strokeWidth={1.6} /> },
   ];
 
@@ -315,6 +321,9 @@ function Stage() {
           </div>
         )}
 
+        {/* Shape tools dropdown (R, O, L, ⇧L) */}
+        <ShapeSelectDropdown />
+
         {otherTools.map(({ id, label, icon }) => (
           <button
             key={id}
@@ -331,6 +340,34 @@ function Stage() {
             {icon}
           </button>
         ))}
+
+        {/* Animate Mode Toggle */}
+        <button
+          className={`tool-button ${
+            animateMode
+              ? "active bg-rose-950/60 text-rose-400 border-rose-500/60 shadow-[0_0_8px_rgba(244,63,94,0.3)]"
+              : ""
+          }`}
+          type="button"
+          aria-label={
+            animateMode
+              ? "Animate Mode ON (⇧A) - Recording property edits to keyframes"
+              : "Toggle Animate Mode (⇧A)"
+          }
+          title={
+            animateMode
+              ? "Animate Mode ON (⇧A) - Recording property edits to keyframes"
+              : "Toggle Animate Mode (⇧A)"
+          }
+          data-testid="button-toggle-animate-mode"
+          onClick={() => toggleAnimateMode()}
+        >
+          <CircleDot
+            size={13}
+            strokeWidth={1.8}
+            className={animateMode ? "animate-pulse text-rose-400" : ""}
+          />
+        </button>
         <div className="tool-divider" />
         <button
           className={`tool-button ${useR3FSpikeCanvas ? "active bg-cyan-900/60 text-cyan-300 border-cyan-500/50" : ""}`}
@@ -371,6 +408,8 @@ function Editor() {
   useEditorShortcuts();
   const exportModalOpen = useEditorUIStore((state) => state.exportModalOpen);
   const setExportModalOpen = useEditorUIStore((state) => state.setExportModalOpen);
+  const helpOpen = useEditorUIStore((state) => state.helpOpen);
+  const setHelpOpen = useEditorUIStore((state) => state.setHelpOpen);
 
   return (
     <main className="editor">
@@ -380,6 +419,7 @@ function Editor() {
       <Inspector />
       <PresetsSheet />
       <ExportModal open={exportModalOpen} onOpenChange={setExportModalOpen} />
+      <ShortcutsModal open={helpOpen} onOpenChange={setHelpOpen} />
     </main>
   );
 }

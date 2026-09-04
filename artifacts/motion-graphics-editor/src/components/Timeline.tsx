@@ -18,6 +18,11 @@ import {
   Camera as CameraIcon,
   AlertTriangle,
   Diamond,
+  Film,
+  ChevronLeft,
+  Sun,
+} from "lucide-react";
+import { SceneFilmstrip } from "./SceneFilmstrip";
   Volume2,
   VolumeX,
   Music,
@@ -59,13 +64,19 @@ export function Timeline() {
   const setCurrentFrame = useEditorUIStore((s) => s.setCurrentFrame);
   const isCameraSelected = useEditorUIStore((s) => s.isCameraSelected);
   const setIsCameraSelected = useEditorUIStore((s) => s.setIsCameraSelected);
+  const isLightSelected = useEditorUIStore((s) => s.isLightSelected);
+  const setIsLightSelected = useEditorUIStore((s) => s.setIsLightSelected);
   const activeTool = useEditorUIStore((s) => s.activeTool);
   const setActiveTool = useEditorUIStore((s) => s.setActiveTool);
+  const timelineViewLevel = useEditorUIStore((s) => s.timelineViewLevel);
+  const setTimelineViewLevel = useEditorUIStore((s) => s.setTimelineViewLevel);
   const isCameraActive = isCameraSelected || activeTool === "camera";
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
+  const activeSceneIndex = scenes.findIndex((s) => s.id === activeSceneId);
   const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
   const selectLayers = useEditorStore((s) => s.selectLayers);
+  const updateSceneLighting = useEditorStore((s) => s.updateSceneLighting);
   const addAnimationBlock = useEditorStore((s) => s.addAnimationBlock);
   const updateAnimationBlock = useEditorStore((s) => s.updateAnimationBlock);
   const removeAnimationBlock = useEditorStore((s) => s.removeAnimationBlock);
@@ -79,7 +90,8 @@ export function Timeline() {
   const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
 
-  const [zoomLevel, setZoomLevel] = useState("54");
+  const timelineZoom = useEditorUIStore((s) => s.timelineZoom);
+  const setTimelineZoom = useEditorUIStore((s) => s.setTimelineZoom);
   const [expandedLayers, setExpandedLayers] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -128,9 +140,11 @@ export function Timeline() {
   const cameraBlocks = animationBlocks.filter(
     (b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || b.layerId === null),
   );
+  const hasDeviceMockup = layers.some((l) => Boolean(l.mockup && l.mockup !== "none"));
+  const isLightActive = isLightSelected;
 
   // Zoom to pxPerFrame mapping: zoom 0 = 2px, zoom 50 = 6px, zoom 100 = 16px
-  const zoomNum = parseInt(zoomLevel, 10) || 50;
+  const zoomNum = timelineZoom ?? 54;
   const pxPerFrame = Math.max(1.5, 2 + (zoomNum / 100) * 12);
   const totalWidth = Math.max(800, durationFrames * pxPerFrame + 120);
 
@@ -480,6 +494,38 @@ export function Timeline() {
           </div>
         </div>
 
+        {/* Timeline View Level Switcher (Whole Video vs Scene Detail) */}
+        <div className="flex items-center gap-1 bg-[#16181d] border border-[#232730] p-0.5 rounded-md">
+          <button
+            type="button"
+            className={`px-2 py-0.5 rounded text-[9px] font-medium flex items-center gap-1 transition-colors ${
+              timelineViewLevel === "all-scenes"
+                ? "bg-[#0284c7] text-white shadow-sm font-semibold"
+                : "text-[#94a3b8] hover:text-white"
+            }`}
+            onClick={() => setTimelineViewLevel("all-scenes")}
+            data-testid="button-timeline-view-all-scenes"
+            title="Zoomed-out Whole Video level: view and reorder all scenes"
+          >
+            <Film size={10} />
+            <span>Whole Video</span>
+          </button>
+          <button
+            type="button"
+            className={`px-2 py-0.5 rounded text-[9px] font-medium flex items-center gap-1 transition-colors ${
+              timelineViewLevel === "scene-detail"
+                ? "bg-[#0284c7] text-white shadow-sm font-semibold"
+                : "text-[#94a3b8] hover:text-white"
+            }`}
+            onClick={() => setTimelineViewLevel("scene-detail")}
+            data-testid="button-timeline-view-scene-detail"
+            title={`Zoomed-in Scene level: ${activeScene?.name || "Scene"}`}
+          >
+            <Layers size={10} />
+            <span className="truncate max-w-[90px]">{activeScene?.name || "Scene"}</span>
+          </button>
+        </div>
+
         {/* Global Add Animation Block Dropdown */}
         <div className="flex items-center gap-3">
           <DropdownMenu>
@@ -534,19 +580,38 @@ export function Timeline() {
               type="range"
               min="0"
               max="100"
-              value={zoomLevel}
-              onChange={(e) => setZoomLevel(e.target.value)}
+              value={timelineZoom}
+              onChange={(e) => setTimelineZoom(parseInt(e.target.value, 10) || 0)}
               data-testid="input-timeline-zoom"
-              title={`Timeline zoom: ${zoomLevel}%`}
+              title={`Timeline zoom: ${timelineZoom}%`}
             />
           </label>
         </div>
       </div>
 
-      {/* Timeline Main Split Layout: Left Track Headers & Right Timeline Canvas */}
-      <div className="timeline-body flex flex-1 min-h-0 relative overflow-hidden bg-[#0c0d0f]">
-        {/* Left Track Headers Column */}
-        <div className="timeline-headers-sidebar w-40 flex-shrink-0 flex flex-col border-r border-[#191b1e] bg-[#111215] z-10">
+      {/* Timeline Main Split Layout: Whole Video Filmstrip vs Single Scene Detail */}
+      {timelineViewLevel === "all-scenes" ? (
+        <SceneFilmstrip />
+      ) : (
+        <div className="timeline-body flex flex-1 min-h-0 relative overflow-hidden bg-[#0c0d0f]">
+          {/* Left Dimmed Margin (click to step back out to All Scenes) */}
+          {activeSceneIndex > 0 && (
+            <button
+              type="button"
+              className="w-6 flex-shrink-0 bg-[#080a0d] hover:bg-[#121722] border-r border-[#1e2330] flex flex-col items-center justify-center text-[#64748b] hover:text-[#38bdf8] transition-colors cursor-pointer z-30 group select-none"
+              onClick={() => setTimelineViewLevel("all-scenes")}
+              title={`Click dimmed area to return to Whole Video (◀ ${scenes[activeSceneIndex - 1]?.name})`}
+              data-testid="button-dimmed-margin-left"
+            >
+              <ChevronLeft size={13} className="group-hover:-translate-x-0.5 transition-transform" />
+              <span className="text-[7.5px] font-mono [writing-mode:vertical-rl] rotate-180 mt-1 uppercase tracking-wider text-[#475569] group-hover:text-[#38bdf8]">
+                All Scenes
+              </span>
+            </button>
+          )}
+
+          {/* Left Track Headers Column */}
+          <div className="timeline-headers-sidebar w-40 flex-shrink-0 flex flex-col border-r border-[#191b1e] bg-[#111215] z-10">
           {/* Header ruler placeholder */}
           <div className="h-6 flex items-center px-2.5 border-b border-[#191b1e] bg-[#131518] text-[8.5px] font-medium text-[#64748b] tracking-wider uppercase">
             <span>Layers ({layers.length})</span>
@@ -562,6 +627,7 @@ export function Timeline() {
             data-testid="timeline-camera-lane-header"
             onClick={() => {
               selectLayers([]);
+              setIsLightSelected(false);
               setIsCameraSelected(true);
               setActiveTool("camera");
             }}
@@ -612,6 +678,50 @@ export function Timeline() {
             </DropdownMenu>
           </div>
 
+          {/* Pinned Light Lane Header (conditionally visible when scene has device mockup) */}
+          {hasDeviceMockup && (
+            <div
+              className={`h-7 px-2 flex items-center justify-between border-b border-[#20252e] text-[9.5px] transition-colors cursor-pointer ${
+                isLightActive
+                  ? "bg-[#854d0e]/60 border-l-2 border-l-[#eab308] text-[#fde047] font-medium"
+                  : "bg-[#0d151c] hover:bg-[#181a1d] text-[#eab308]"
+              }`}
+              data-testid="timeline-light-lane-header"
+              onClick={() => {
+                selectLayers([]);
+                setIsCameraSelected(false);
+                setIsLightSelected(true);
+              }}
+              title="Light Track: Studio Illumination & Shadows for device mockups"
+            >
+              <div className="flex items-center gap-1.5 truncate">
+                <Sun size={11} className={`${isLightActive ? "text-[#fde047]" : "text-[#eab308]"} flex-shrink-0`} />
+                <span className={`font-medium ${isLightActive ? "text-[#fef08a]" : "text-[#e2e8f0]"}`}>Light</span>
+                <span className="px-1 py-0.2 rounded-full bg-[#713f12]/60 text-[#fde047] text-[7.5px] font-mono">
+                  {Math.round((activeScene?.lighting?.intensity ?? 0.85) * 100)}%
+                </span>
+                {!(activeScene?.lighting?.enabled ?? true) && (
+                  <span className="text-[7.5px] text-[#78716c] font-mono">(off)</span>
+                )}
+              </div>
+
+              {/* Quick toggle lighting button */}
+              <button
+                type="button"
+                className="w-4 h-4 rounded hover:bg-[#713f12] text-[#fde047] hover:text-[#fef08a] flex items-center justify-center transition-colors"
+                title={(activeScene?.lighting?.enabled ?? true) ? "Disable Studio Illumination" : "Enable Studio Illumination"}
+                data-testid="button-toggle-lighting-lane"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  updateSceneLighting({
+                    enabled: !(activeScene?.lighting?.enabled ?? true),
+                  });
+                }}
+              >
+                <Sun size={10} />
+              </button>
+            </div>
+          )}
           {/* Pinned Audio Lane Header */}
           <div
             className="h-7 px-2 flex items-center justify-between border-b border-[#20252e] text-[9.5px] bg-[#161226]/90 transition-colors"
@@ -934,6 +1044,11 @@ export function Timeline() {
           id="timeline-tracks-container"
           ref={scrollContainerRef}
           onScroll={handleTracksScroll}
+          onWheel={(e) => {
+            if (e.shiftKey && scrollContainerRef.current) {
+              scrollContainerRef.current.scrollLeft += e.deltaY || e.deltaX;
+            }
+          }}
           className="flex-1 overflow-x-auto overflow-y-auto relative select-none scrollbar-studio"
         >
           <div style={{ width: `${totalWidth}px`, height: "100%" }} className="relative">
@@ -973,6 +1088,7 @@ export function Timeline() {
               data-testid="timeline-camera-lane-track"
               onClick={() => {
                 selectLayers([]);
+                setIsLightSelected(false);
                 setIsCameraSelected(true);
                 setActiveTool("camera");
               }}
@@ -1026,6 +1142,7 @@ export function Timeline() {
                     onClick={(e) => {
                       e.stopPropagation();
                       selectLayers([]);
+                      setIsLightSelected(false);
                       setIsCameraSelected(true);
                       setActiveTool("camera");
                     }}
@@ -1070,6 +1187,65 @@ export function Timeline() {
               })}
             </div>
 
+            {/* Pinned Light Lane Track (conditionally visible when scene has device mockup) */}
+            {hasDeviceMockup && (
+              <div
+                className={`h-7 border-b border-[#20252e] relative cursor-pointer transition-colors ${
+                  isLightActive ? "bg-[#713f12]/25" : "bg-[#0c131a]/80"
+                }`}
+                data-testid="timeline-light-lane-track"
+                onClick={() => {
+                  selectLayers([]);
+                  setIsCameraSelected(false);
+                  setIsLightSelected(true);
+                }}
+              >
+                {/* Frame grid markings */}
+                {Array.from({ length: ticksCount + 1 }).map((_, i) => {
+                  const tickFrame = i * majorTickStep;
+                  if (tickFrame > durationFrames) return null;
+                  return (
+                    <div
+                      key={`light-grid-${tickFrame}`}
+                      className="absolute top-0 bottom-0 w-[1px] bg-[#1a2332]/40 pointer-events-none"
+                      style={{ left: `${tickFrame * pxPerFrame}px` }}
+                    />
+                  );
+                })}
+
+                {/* Studio Lighting span block across scene */}
+                <div
+                  className={`absolute top-1 bottom-1 rounded border shadow-sm flex items-center justify-between px-2 text-[8px] font-medium select-none overflow-hidden transition-all ${
+                    (activeScene?.lighting?.enabled ?? true)
+                      ? "bg-[#854d0e]/85 hover:bg-[#a16207] border-[#ca8a04] text-[#fef08a]"
+                      : "bg-[#292524]/80 hover:bg-[#44403c] border-[#78716c] text-[#a8a29e]"
+                  } z-10`}
+                  style={{
+                    left: 0,
+                    width: `${durationFrames * pxPerFrame}px`,
+                  }}
+                  title={`Direct Studio Illumination: ${(activeScene?.lighting?.enabled ?? true) ? "Enabled" : "Disabled"}, Intensity: ${Math.round((activeScene?.lighting?.intensity ?? 0.85) * 100)}%, Light X: ${activeScene?.lighting?.lightX ?? -300}, Light Y: ${activeScene?.lighting?.lightY ?? -450}`}
+                  data-testid="timeline-light-span-block"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectLayers([]);
+                    setIsCameraSelected(false);
+                    setIsLightSelected(true);
+                  }}
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Sun size={9} className={(activeScene?.lighting?.enabled ?? true) ? "text-[#fde047]" : "text-[#78716c]"} />
+                    <span className="truncate">
+                      Studio Illumination &bull; {Math.round((activeScene?.lighting?.intensity ?? 0.85) * 100)}%
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1 font-mono text-[7.5px] opacity-80 flex-shrink-0">
+                    <span>X:{activeScene?.lighting?.lightX ?? -300}</span>
+                    <span>Y:{activeScene?.lighting?.lightY ?? -450}</span>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Pinned Audio Lane Track */}
             <div
               className="h-7 border-b border-[#20252e] relative bg-[#120e20]/80 overflow-hidden"
@@ -1380,7 +1556,24 @@ export function Timeline() {
             </div>
           </div>
         </div>
+
+        {/* Right Dimmed Margin (click to step back out to All Scenes) */}
+        {activeSceneIndex < scenes.length - 1 && (
+          <button
+            type="button"
+            className="w-6 flex-shrink-0 bg-[#080a0d] hover:bg-[#121722] border-l border-[#1e2330] flex flex-col items-center justify-center text-[#64748b] hover:text-[#38bdf8] transition-colors cursor-pointer z-30 group select-none"
+            onClick={() => setTimelineViewLevel("all-scenes")}
+            title={`Click dimmed area to return to Whole Video (${scenes[activeSceneIndex + 1]?.name} ▶)`}
+            data-testid="button-dimmed-margin-right"
+          >
+            <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
+            <span className="text-[7.5px] font-mono [writing-mode:vertical-rl] mt-1 uppercase tracking-wider text-[#475569] group-hover:text-[#38bdf8]">
+              All Scenes
+            </span>
+          </button>
+        )}
       </div>
-    </section>
-  );
+    )}
+  </section>
+);
 }

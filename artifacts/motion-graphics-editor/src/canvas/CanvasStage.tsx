@@ -20,6 +20,7 @@ import {
   useEditorUIStore,
   type Layer,
   type Transform,
+  type ToolId,
   type BloomEffect,
   type VignetteEffect,
   type FilmGrainEffect,
@@ -184,8 +185,23 @@ function hitTestLayer(layer: Layer, canvasX: number, canvasY: number): boolean {
 
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
+function generateArrowPath(w: number, h: number): string {
+  const shaftT = Math.max(2, Math.min(10, h * 0.28));
+  const headLen = Math.min(w * 0.4, Math.max(12, h));
+  const headW = Math.max(10, h);
+  const cy = h / 2;
+  const shaftEnd = Math.max(0, w - headLen);
+
+  return `M 0 ${cy - shaftT / 2} L ${shaftEnd} ${cy - shaftT / 2} L ${shaftEnd} ${cy - headW / 2} L ${w} ${cy} L ${shaftEnd} ${cy + headW / 2} L ${shaftEnd} ${cy + shaftT / 2} L 0 ${cy + shaftT / 2} Z`;
+}
+
 interface DragOperation {
-  type: "move" | "resize" | "rotate" | "pan" | "tilt" | "camera";
+  type: "move" | "resize" | "rotate" | "pan" | "tilt" | "camera" | "create";
+  creationTool?: ToolId;
+  startWorldX?: number;
+  startWorldY?: number;
+  currentWorldX?: number;
+  currentWorldY?: number;
   cameraDragMode?: "orbit" | "pan" | "dolly";
   startClientX: number;
   startClientY: number;
@@ -233,10 +249,12 @@ export function CanvasStage() {
   const playing = useEditorUIStore((s) => s.playing);
   const currentFrame = useEditorUIStore((s) => s.currentFrame);
   const setCurrentFrame = useEditorUIStore((s) => s.setCurrentFrame);
+  const animateMode = useEditorUIStore((s) => s.animateMode);
   const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
   const selectLayers = useEditorStore((s) => s.selectLayers);
   const addLayer = useEditorStore((s) => s.addLayer);
   const updateLayer = useEditorStore((s) => s.updateLayer);
+  const recordKeyframe = useEditorStore((s) => s.recordKeyframe);
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
   const aspectRatio = useEditorStore((s) => s.aspectRatio) || "16:9";
@@ -249,6 +267,14 @@ export function CanvasStage() {
   const [zoomDropdownOpen, setZoomDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
+  const spaceDidPanRef = useRef(false);
+  const [createDragPreview, setCreateDragPreview] = useState<{
+    tool: ToolId;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
   const [safeZoneMode, setSafeZoneMode] = useState<SafeZoneMode>("none");
 
   // Figma Vector / System Clipboard Paste Listener
@@ -326,17 +352,32 @@ export function CanvasStage() {
           return;
         }
         e.preventDefault();
+        spaceDidPanRef.current = false;
         setIsSpacePressed(true);
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       if (e.code === "Space") {
+        const target = e.target as HTMLElement | null;
+        if (
+          !target ||
+          (target.tagName !== "INPUT" &&
+            target.tagName !== "TEXTAREA" &&
+            !target.isContentEditable)
+        ) {
+          if (!spaceDidPanRef.current) {
+            // Space was tapped without panning: toggle play/pause
+            useEditorUIStore.getState().setPlaying((p) => !p);
+          }
+        }
+        spaceDidPanRef.current = false;
         setIsSpacePressed(false);
       }
     };
 
     const handleBlur = () => {
+      spaceDidPanRef.current = false;
       setIsSpacePressed(false);
     };
 
@@ -899,6 +940,9 @@ export function CanvasStage() {
 
     // Pan tool or middle click or space key
     if (activeTool === "hand" || e.button === 1 || isSpacePressed) {
+      if (isSpacePressed) {
+        spaceDidPanRef.current = true;
+      }
       dragOpRef.current = {
         type: "pan",
         startClientX: e.clientX,
@@ -962,42 +1006,16 @@ export function CanvasStage() {
       currentFrame,
     );
 
-    // Shape Tool: Click canvas to place default rectangle
-    if (activeTool === "shape") {
-      const width = 200;
-      const height = 200;
-      const { worldX, worldY } = canvasToWorld(
-        canvasX,
-        canvasY,
-        currentCamera,
-        nativeWidth,
-        nativeHeight,
-        0,
-      );
-      const newId = addLayer(activeScene.id, {
-        type: "shape",
-        name: `Rectangle ${(activeScene.layers.length || 0) + 1}`,
-        transform: {
-          x: Math.round(Math.max(0, worldX - width / 2)),
-          y: Math.round(Math.max(0, worldY - height / 2)),
-          width,
-          height,
-          rotation: 0,
-          depth: 0,
-        },
-        shape: {
-          kind: "rect",
-          fill: "#38bdf8",
-          stroke: "#0284c7",
-        },
-      });
-      selectLayers([newId]);
-      setActiveTool("scene");
-      return;
-    }
+    // Shape / Text Creation Tools: Support both Drag-to-size and Click-to-place
+    const isCreationTool =
+      activeTool === "rectangle" ||
+      activeTool === "ellipse" ||
+      activeTool === "line" ||
+      activeTool === "arrow" ||
+      activeTool === "shape" ||
+      activeTool === "text";
 
-    // Text Tool: Click canvas to place editable text layer
-    if (activeTool === "text") {
+    if (isCreationTool) {
       const { worldX, worldY } = canvasToWorld(
         canvasX,
         canvasY,
@@ -1006,29 +1024,19 @@ export function CanvasStage() {
         nativeHeight,
         0,
       );
-      const newId = addLayer(activeScene.id, {
-        type: "text",
-        name: `Text ${(activeScene.layers.length || 0) + 1}`,
-        transform: {
-          x: Math.round(Math.max(0, worldX)),
-          y: Math.round(Math.max(0, worldY - 24)),
-          width: 260,
-          height: 52,
-          rotation: 0,
-          depth: 0,
-        },
-        text: {
-          content: "Heading Text",
-          fontSize: 32,
-          fontFamily: "Inter",
-          color: "#ffffff",
-          align: "left",
-        },
-      });
-      selectLayers([newId]);
-      setEditingTextLayerId(newId);
-      setEditingTextValue("Heading Text");
-      setActiveTool("scene");
+      dragOpRef.current = {
+        type: "create",
+        creationTool: activeTool,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startWorldX: worldX,
+        startWorldY: worldY,
+        currentWorldX: worldX,
+        currentWorldY: worldY,
+      };
+      if (containerRef.current) {
+        containerRef.current.setPointerCapture(e.pointerId);
+      }
       return;
     }
 
@@ -1306,6 +1314,35 @@ export function CanvasStage() {
   const handleStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const op = dragOpRef.current;
     if (!op) return;
+
+    if (op.type === "create" && op.startWorldX !== undefined && op.startWorldY !== undefined) {
+      const { x: curCanvasX, y: curCanvasY } = getCanvasCoords(e.clientX, e.clientY);
+      const animationBlocks = activeScene.animationBlocks || [];
+      const currentCamera = sampleCamera(
+        activeScene.camera,
+        animationBlocks,
+        currentFrame,
+      );
+      const { worldX, worldY } = canvasToWorld(
+        curCanvasX,
+        curCanvasY,
+        currentCamera,
+        nativeWidth,
+        nativeHeight,
+        0,
+      );
+      op.currentWorldX = worldX;
+      op.currentWorldY = worldY;
+      op.hasMoved = true;
+      setCreateDragPreview({
+        tool: op.creationTool || "rectangle",
+        startX: op.startWorldX,
+        startY: op.startWorldY,
+        currentX: worldX,
+        currentY: worldY,
+      });
+      return;
+    }
 
     if (op.type === "pan" && op.initialPan) {
       const dx = e.clientX - op.startClientX;
@@ -1604,6 +1641,219 @@ export function CanvasStage() {
   const handleStagePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
     if (dragOpRef.current) {
       const op = dragOpRef.current;
+
+      if (op.type === "create" && op.startWorldX !== undefined && op.startWorldY !== undefined) {
+        setCreateDragPreview(null);
+        const startX = op.startWorldX;
+        const startY = op.startWorldY;
+        const endX = op.currentWorldX ?? startX;
+        const endY = op.currentWorldY ?? startY;
+
+        const dx = Math.abs(endX - startX);
+        const dy = Math.abs(endY - startY);
+        const isDrag = dx > 5 || dy > 5;
+
+        const tool = op.creationTool || "rectangle";
+        let layerX = 0;
+        let layerY = 0;
+        let layerW = 0;
+        let layerH = 0;
+
+        if (isDrag) {
+          layerX = Math.round(Math.min(startX, endX));
+          layerY = Math.round(Math.min(startY, endY));
+          layerW = Math.round(Math.max(10, dx));
+          if (tool === "line") {
+            layerH = Math.round(Math.max(2, dy < 5 ? 4 : dy));
+          } else if (tool === "arrow") {
+            layerH = Math.round(Math.max(8, dy < 5 ? 24 : dy));
+          } else if (tool === "text") {
+            layerH = Math.round(Math.max(24, dy));
+          } else {
+            layerH = Math.round(Math.max(10, dy));
+          }
+        } else {
+          // Click-to-place default sized
+          if (tool === "text") {
+            layerW = 260;
+            layerH = 52;
+            layerX = Math.round(startX);
+            layerY = Math.round(startY - 24);
+          } else if (tool === "line") {
+            layerW = 200;
+            layerH = 4;
+            layerX = Math.round(startX - 100);
+            layerY = Math.round(startY - 2);
+          } else if (tool === "arrow") {
+            layerW = 200;
+            layerH = 24;
+            layerX = Math.round(startX - 100);
+            layerY = Math.round(startY - 12);
+          } else {
+            // rect or ellipse
+            layerW = 200;
+            layerH = 200;
+            layerX = Math.round(startX - 100);
+            layerY = Math.round(startY - 100);
+          }
+        }
+
+        let layerPayload: Partial<Layer>;
+        const layerCount = (activeScene.layers.length || 0) + 1;
+
+        if (tool === "text") {
+          layerPayload = {
+            type: "text",
+            name: `Text ${layerCount}`,
+            transform: {
+              x: layerX,
+              y: layerY,
+              width: layerW,
+              height: layerH,
+              rotation: 0,
+              depth: 0,
+            },
+            text: {
+              content: "Heading Text",
+              fontSize: 32,
+              fontFamily: "Inter",
+              color: "#ffffff",
+              align: "left",
+            },
+          };
+        } else if (tool === "ellipse") {
+          layerPayload = {
+            type: "shape",
+            name: `Ellipse ${layerCount}`,
+            transform: {
+              x: layerX,
+              y: layerY,
+              width: layerW,
+              height: layerH,
+              rotation: 0,
+              depth: 0,
+            },
+            shape: {
+              kind: "ellipse",
+              fill: "#38bdf8",
+              stroke: "#0284c7",
+              strokeWidth: 2,
+            },
+          };
+        } else if (tool === "line") {
+          layerPayload = {
+            type: "shape",
+            name: `Line ${layerCount}`,
+            transform: {
+              x: layerX,
+              y: layerY,
+              width: layerW,
+              height: layerH,
+              rotation: 0,
+              depth: 0,
+            },
+            shape: {
+              kind: "rect",
+              fill: "#38bdf8",
+              stroke: "transparent",
+              strokeWidth: 0,
+            },
+          };
+        } else if (tool === "arrow") {
+          layerPayload = {
+            type: "shape",
+            name: `Arrow ${layerCount}`,
+            transform: {
+              x: layerX,
+              y: layerY,
+              width: layerW,
+              height: layerH,
+              rotation: 0,
+              depth: 0,
+            },
+            shape: {
+              kind: "path",
+              path: generateArrowPath(layerW, layerH),
+              fill: "#38bdf8",
+              stroke: "#0284c7",
+              strokeWidth: 2,
+            },
+          };
+        } else {
+          // rectangle or generic shape
+          layerPayload = {
+            type: "shape",
+            name: `Rectangle ${layerCount}`,
+            transform: {
+              x: layerX,
+              y: layerY,
+              width: layerW,
+              height: layerH,
+              rotation: 0,
+              depth: 0,
+            },
+            shape: {
+              kind: "rect",
+              fill: "#38bdf8",
+              stroke: "#0284c7",
+              strokeWidth: 2,
+              radius: 0,
+            },
+          };
+        }
+
+        const newId = addLayer(activeScene.id, layerPayload);
+        selectLayers([newId]);
+        if (tool === "text" && !isDrag) {
+          setEditingTextLayerId(newId);
+          setEditingTextValue("Heading Text");
+        }
+        setActiveTool("scene");
+        dragOpRef.current = null;
+        try {
+          if (containerRef.current) {
+            containerRef.current.releasePointerCapture(e.pointerId);
+          }
+        } catch {
+          // Capture release safety
+        }
+        return;
+      }
+
+      // Animate Mode keyframe recording on gesture end
+      if (animateMode && op.hasMoved) {
+        if (op.type === "move") {
+          if (op.initialTransforms && op.initialTransforms.size > 0) {
+            op.initialTransforms.forEach((_, lId) => {
+              const currentL = activeScene.layers.find((l) => l.id === lId);
+              if (currentL) {
+                recordKeyframe(lId, "x", currentL.transform.x, currentFrame, activeScene.id);
+                recordKeyframe(lId, "y", currentL.transform.y, currentFrame, activeScene.id);
+              }
+            });
+          } else if (op.layerId) {
+            const currentL = activeScene.layers.find((l) => l.id === op.layerId);
+            if (currentL) {
+              recordKeyframe(op.layerId, "x", currentL.transform.x, currentFrame, activeScene.id);
+              recordKeyframe(op.layerId, "y", currentL.transform.y, currentFrame, activeScene.id);
+            }
+          }
+        } else if (op.type === "rotate" && op.layerId) {
+          const currentL = activeScene.layers.find((l) => l.id === op.layerId);
+          if (currentL) {
+            recordKeyframe(op.layerId, "rotation", currentL.transform.rotation, currentFrame, activeScene.id);
+          }
+        } else if (op.type === "resize" && op.layerId) {
+          const currentL = activeScene.layers.find((l) => l.id === op.layerId);
+          if (currentL) {
+            recordKeyframe(op.layerId, "x", currentL.transform.x, currentFrame, activeScene.id);
+            recordKeyframe(op.layerId, "y", currentL.transform.y, currentFrame, activeScene.id);
+            recordKeyframe(op.layerId, "width", currentL.transform.width, currentFrame, activeScene.id);
+            recordKeyframe(op.layerId, "height", currentL.transform.height, currentFrame, activeScene.id);
+          }
+        }
+      }
+
       if (!op.hasMoved && op.pendingSingleSelectId) {
         selectLayers([op.pendingSingleSelectId]);
       }
@@ -1718,7 +1968,11 @@ export function CanvasStage() {
             ? dragOpRef.current?.type === "camera" ? "grabbing" : "grab"
             : activeTool === "text"
             ? "text"
-            : activeTool === "shape"
+            : activeTool === "shape" ||
+              activeTool === "rectangle" ||
+              activeTool === "ellipse" ||
+              activeTool === "line" ||
+              activeTool === "arrow"
             ? "crosshair"
             : "default",
         userSelect: "none",
@@ -1797,6 +2051,60 @@ export function CanvasStage() {
             </span>
           </div>
         )}
+
+        {/* Interactive Drag-to-Create Bounding Box Preview */}
+        {createDragPreview && (() => {
+          const previewLeft = Math.min(createDragPreview.startX, createDragPreview.currentX) * scaleFactor;
+          const previewTop = Math.min(createDragPreview.startY, createDragPreview.currentY) * scaleFactor;
+          const previewW = Math.abs(createDragPreview.currentX - createDragPreview.startX) * scaleFactor;
+          const previewH = Math.abs(createDragPreview.currentY - createDragPreview.startY) * scaleFactor;
+          const nativeW = Math.round(Math.abs(createDragPreview.currentX - createDragPreview.startX));
+          const nativeH = Math.round(Math.abs(createDragPreview.currentY - createDragPreview.startY));
+          const isEllipse = createDragPreview.tool === "ellipse";
+
+          return (
+            <div
+              style={{
+                position: "absolute",
+                left: `${previewLeft}px`,
+                top: `${previewTop}px`,
+                width: `${Math.max(2, previewW)}px`,
+                height: `${Math.max(2, previewH)}px`,
+                border: "1.5px dashed #38bdf8",
+                borderRadius: isEllipse ? "50%" : "2px",
+                backgroundColor: "rgba(56, 189, 248, 0.12)",
+                boxShadow: "0 0 10px rgba(56, 189, 248, 0.2)",
+                pointerEvents: "none",
+                zIndex: 25,
+                boxSizing: "border-box",
+              }}
+            >
+              {(nativeW > 5 || nativeH > 5) && (
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "-24px",
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    padding: "2px 6px",
+                    borderRadius: "4px",
+                    backgroundColor: "rgba(11, 15, 20, 0.92)",
+                    border: "1px solid rgba(56, 189, 248, 0.5)",
+                    fontSize: "9px",
+                    fontFamily: "monospace",
+                    color: "#38bdf8",
+                    whiteSpace: "nowrap",
+                    boxShadow: "0 2px 8px rgba(0, 0, 0, 0.5)",
+                    pointerEvents: "none",
+                    userSelect: "none",
+                  }}
+                >
+                  {nativeW} × {nativeH}px
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Multi-selection outlines */}
         {multiSelectedLayers.map((layer) => {
