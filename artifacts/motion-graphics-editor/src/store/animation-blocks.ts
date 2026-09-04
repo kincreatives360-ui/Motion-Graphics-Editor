@@ -193,7 +193,7 @@ export function sampleCubicBezier(
 
 export function applyEasing(
   t: number,
-  easing: "linear" | "ease-in-out" | "spring" | "custom",
+  easing: KeyframeEasing = "linear",
   customCurve: [number, number, number, number] = [0.25, 0.1, 0.25, 1.0]
 ): number {
   const clampedT = clamp(t, 0, 1);
@@ -362,7 +362,7 @@ export function sampleBlock(
 ): SampledLayerDelta {
   const duration = Math.max(1, block.endFrame - block.startFrame);
   const t = clamp((frame - block.startFrame) / duration, 0, 1);
-  const eased = applyEasing(t, block.easing, block.customCurve);
+  const eased = applyEasing(t, block.easing || "linear", block.customCurve);
 
   const presetId =
     typeof block.preset === "string"
@@ -711,7 +711,7 @@ export function sampleCamera(
 
     if (frame >= block.startFrame && frame <= block.endFrame) {
       const t = clamp((frame - block.startFrame) / duration, 0, 1);
-      const eased = applyEasing(t, block.easing, block.customCurve);
+      const eased = applyEasing(t, block.easing || "linear", block.customCurve);
       currentCamera.x += dx * eased;
       currentCamera.y += dy * eased;
       currentCamera.z += dz * eased;
@@ -740,12 +740,12 @@ export function sampleCamera(
  * Depth of field helper: blurs each layer proportionally to its distance from camera.focusDistance
  * Scaled by lens aperture F-stop (f/1.4 = deep cinematic bokeh, f/11 = sharp deep focus)
  */
-export function dofBlurPx(layer: Layer, camera: Camera, maxBlur = 14): number {
+export function dofBlurPx(layer: Layer, camera: Camera, maxBlur = 12): number {
   const layerDepth = layer.transform.depth ?? 0;
   const focusDist = camera.focusDistance ?? 1000;
   const distanceFromFocus = Math.abs(layerDepth - focusDist);
   const fStop = camera.apertureFStop || 2.8;
   const apertureFactor = 2.8 / fStop;
-  return clamp((distanceFromFocus / 38) * apertureFactor, 0, maxBlur);
+  return clamp((distanceFromFocus / 40) * apertureFactor, 0, maxBlur);
 }
 

@@ -1,6 +1,10 @@
-// Module-level cached offscreen canvas to avoid allocating per frame
 let blurCanvas: HTMLCanvasElement | null = null;
 let blurCtx: CanvasRenderingContext2D | null = null;
+
+export function resetCachedPostProcessingCanvases() {
+  blurCanvas = null;
+  blurCtx = null;
+}
 
 function getBlurCanvas(
   width: number,
@@ -121,8 +125,9 @@ function getNoisePattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
  * Optical Film Grain pass:
  * Simulates analog silver-halide film grain to eliminate digital color banding
  * on gradients and give product motion videos a photographic texture.
+ * Supports intensity (0-1) and size (0.5-3.0) parameters.
  */
-export function applyFilmGrain(main: HTMLCanvasElement, intensity = 0.08) {
+export function applyFilmGrain(main: HTMLCanvasElement, intensity = 0.08, size = 1.0) {
   if (intensity <= 0.005 || main.width === 0 || main.height === 0) return;
   const ctx = main.getContext("2d");
   if (!ctx) return;
@@ -130,11 +135,26 @@ export function applyFilmGrain(main: HTMLCanvasElement, intensity = 0.08) {
   const pattern = getNoisePattern(ctx);
   if (!pattern) return;
 
+  const clampedSize = Math.max(0.5, Math.min(size || 1.0, 3.0));
+
   ctx.save();
   ctx.globalCompositeOperation = "soft-light";
   ctx.globalAlpha = Math.min(1, Math.max(0, intensity * 1.5));
-  ctx.fillStyle = pattern;
-  ctx.fillRect(0, 0, main.width, main.height);
+
+  // If setTransform on CanvasPattern is available (supported in modern DOMMatrix), scale the pattern directly.
+  if (typeof (pattern as any).setTransform === "function" && typeof DOMMatrix !== "undefined") {
+    (pattern as any).setTransform(new DOMMatrix().scale(clampedSize, clampedSize));
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, main.width, main.height);
+  } else if (Math.abs(clampedSize - 1.0) > 0.01) {
+    // Fallback scaling for environments without pattern.setTransform
+    ctx.scale(clampedSize, clampedSize);
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, main.width / clampedSize, main.height / clampedSize);
+  } else {
+    ctx.fillStyle = pattern;
+    ctx.fillRect(0, 0, main.width, main.height);
+  }
   ctx.restore();
 }
 
@@ -183,3 +203,207 @@ export function applyChromaticAberration(
   ctx.drawImage(main, offsetPx, 0);
   ctx.restore();
 }
+
+/**
+ * Color Grade post-processing pass:
+ * Adjusts EV exposure (-2 to +2), contrast (0 to 2), and saturation (0 to 2).
+ */
+export function applyColorGrade(
+  main: HTMLCanvasElement,
+  exposure = 0,
+  contrast = 1,
+  saturation = 1,
+) {
+  if (
+    main.width === 0 ||
+    main.height === 0 ||
+    (Math.abs(exposure) < 0.001 &&
+      Math.abs(contrast - 1) < 0.001 &&
+      Math.abs(saturation - 1) < 0.001)
+  ) {
+    return;
+  }
+
+  const target = getBlurCanvas(main.width, main.height);
+  if (!target) return;
+  const { canvas: tempCanvas, ctx: tempCtx } = target;
+
+  tempCtx.filter = "none";
+  tempCtx.globalCompositeOperation = "source-over";
+  tempCtx.globalAlpha = 1.0;
+  tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+  tempCtx.drawImage(main, 0, 0);
+
+  const mctx = main.getContext("2d");
+  if (!mctx) return;
+
+  const brightnessFactor = Math.pow(2, exposure);
+  mctx.save();
+  mctx.setTransform(1, 0, 0, 1, 0, 0);
+  mctx.filter = `brightness(${brightnessFactor.toFixed(3)}) contrast(${contrast.toFixed(3)}) saturate(${saturation.toFixed(3)})`;
+  mctx.clearRect(0, 0, main.width, main.height);
+  mctx.drawImage(tempCanvas, 0, 0);
+  mctx.filter = "none";
+  mctx.restore();
+}
+
+/**
+ * Glitch post-processing pass:
+ * Simulates digital glitch with horizontal slice displacements and chromatic channel offsets.
+ */
+export function applyGlitch(
+  main: HTMLCanvasElement,
+  intensity = 0.3,
+  speed = 1,
+) {
+  if (intensity <= 0.01 || main.width === 0 || main.height === 0) return;
+
+  const target = getBlurCanvas(main.width, main.height);
+  if (!target) return;
+  const { canvas: tempCanvas, ctx: tempCtx } = target;
+
+  tempCtx.filter = "none";
+  tempCtx.globalCompositeOperation = "source-over";
+  tempCtx.globalAlpha = 1.0;
+  tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+  tempCtx.drawImage(main, 0, 0);
+
+  const mctx = main.getContext("2d");
+  if (!mctx) return;
+
+  mctx.save();
+  mctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  const numSlices = Math.max(2, Math.round(intensity * 10));
+  const maxShift = intensity * 30 * Math.max(0.5, Math.min(3, speed));
+
+  for (let i = 0; i < numSlices; i++) {
+    const sliceY = (((i * 37 + speed * 13) % 100) / 100) * main.height;
+    const sliceH = Math.max(4, (((i * 19) % 25) / 100) * main.height * intensity);
+    const shiftX = (((i * 29) % 31) / 15 - 1) * maxShift;
+
+    mctx.save();
+    mctx.beginPath();
+    mctx.rect(0, sliceY, main.width, sliceH);
+    mctx.clip();
+    mctx.drawImage(tempCanvas, shiftX, 0);
+
+    if (intensity > 0.35) {
+      mctx.globalCompositeOperation = "screen";
+      mctx.globalAlpha = intensity * 0.35;
+      mctx.drawImage(tempCanvas, shiftX * 1.5, 0);
+    }
+    mctx.restore();
+  }
+
+  mctx.restore();
+}
+
+/**
+ * Ghost post-processing pass:
+ * Draws an offset, blurred, semi-transparent trailing duplicate.
+ */
+export function applyGhost(
+  main: HTMLCanvasElement,
+  opacity = 0.4,
+  offset = 8,
+  blur = 2,
+) {
+  if (opacity <= 0.01 || main.width === 0 || main.height === 0) return;
+
+  const target = getBlurCanvas(main.width, main.height);
+  if (!target) return;
+  const { canvas: tempCanvas, ctx: tempCtx } = target;
+
+  tempCtx.filter = "none";
+  tempCtx.globalCompositeOperation = "source-over";
+  tempCtx.globalAlpha = 1.0;
+  tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+  tempCtx.drawImage(main, 0, 0);
+
+  const mctx = main.getContext("2d");
+  if (!mctx) return;
+
+  mctx.save();
+  mctx.setTransform(1, 0, 0, 1, 0, 0);
+  mctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+  mctx.globalCompositeOperation = "screen";
+  if (blur > 0.05) {
+    mctx.filter = `blur(${blur.toFixed(1)}px)`;
+  }
+  mctx.drawImage(tempCanvas, -offset, -offset * 0.5);
+  mctx.filter = "none";
+  mctx.restore();
+}
+
+/**
+ * Edge Fade post-processing pass:
+ * Softly darkens the canvas edges according to top, right, bottom, and left fractions (0 to 1).
+ */
+export function applyEdgeFade(
+  main: HTMLCanvasElement,
+  top = 0,
+  right = 0,
+  bottom = 0,
+  left = 0,
+) {
+  if (
+    main.width === 0 ||
+    main.height === 0 ||
+    (top <= 0.001 && right <= 0.001 && bottom <= 0.001 && left <= 0.001)
+  ) {
+    return;
+  }
+
+  const ctx = main.getContext("2d");
+  if (!ctx) return;
+
+  const w = main.width;
+  const h = main.height;
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // Top edge fade
+  if (top > 0.001) {
+    const fadeH = Math.min(h, h * top);
+    const grad = ctx.createLinearGradient(0, 0, 0, fadeH);
+    grad.addColorStop(0, "rgba(0, 0, 0, 1)");
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, fadeH);
+  }
+
+  // Bottom edge fade
+  if (bottom > 0.001) {
+    const fadeH = Math.min(h, h * bottom);
+    const grad = ctx.createLinearGradient(0, h, 0, h - fadeH);
+    grad.addColorStop(0, "rgba(0, 0, 0, 1)");
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, h - fadeH, w, fadeH);
+  }
+
+  // Left edge fade
+  if (left > 0.001) {
+    const fadeW = Math.min(w, w * left);
+    const grad = ctx.createLinearGradient(0, 0, fadeW, 0);
+    grad.addColorStop(0, "rgba(0, 0, 0, 1)");
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, fadeW, h);
+  }
+
+  // Right edge fade
+  if (right > 0.001) {
+    const fadeW = Math.min(w, w * right);
+    const grad = ctx.createLinearGradient(w, 0, w - fadeW, 0);
+    grad.addColorStop(0, "rgba(0, 0, 0, 1)");
+    grad.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = grad;
+    ctx.fillRect(w - fadeW, 0, fadeW, h);
+  }
+
+  ctx.restore();
+}
+

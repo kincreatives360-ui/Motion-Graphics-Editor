@@ -50,7 +50,7 @@
     "@types/gif.js": "^0.2.5",
     "gif.js": "^0.2.0",
     "@vitejs/plugin-react": "^5.0.4",
-    "@workspace/api-client-react": "*",
+    "@workspace/api-client-react": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -76,5 +76,14 @@
     "vitest": "^4.1.11",
     "wouter": "^3.3.5",
     "zod": "^3.25.76"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.0.0",
+    "@react-three/fiber": "^9.0.0",
+    "@react-three/postprocessing": "^3.0.4",
+    "@types/three": "^0.174.0",
+    "postprocessing": "^6.36.7",
+    "three": "^0.174.0",
+    "three-stdlib": "^2.35.0"
   }
 }

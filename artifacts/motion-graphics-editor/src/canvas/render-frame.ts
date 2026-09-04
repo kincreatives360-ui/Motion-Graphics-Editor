@@ -1,4 +1,27 @@
-import type { Layer, Scene, BloomSettings, Camera, SceneLighting, OpticsSettings, MockupType } from "../store/editor-store";
+import type {
+  Layer,
+  Scene,
+  Camera,
+  SceneLighting,
+  MockupType,
+  SceneEffect,
+  BloomEffect,
+  VignetteEffect,
+  FilmGrainEffect,
+  ChromaticAberrationEffect,
+  DepthOfFieldEffect,
+  MotionBlurEffect,
+  ColorGradeEffect,
+  GhostEffect,
+  GlitchEffect,
+  EdgeFadeEffect,
+  LayerEffect,
+  DropShadowLayerEffect,
+  GlowLayerEffect,
+  BackdropBlurLayerEffect,
+  LayerBlurLayerEffect,
+  LiquidGlassLayerEffect,
+} from "../store/editor-store";
 import {
   computeRenderedLayer,
   projectLayer,
@@ -12,6 +35,10 @@ import {
   applyFilmGrain,
   applyVignette,
   applyChromaticAberration,
+  applyColorGrade,
+  applyGlitch,
+  applyGhost,
+  applyEdgeFade,
 } from "./post-processing";
 
 export interface ScreenTransformResult {
@@ -204,6 +231,8 @@ export function getScreenTransform(
           color: rendered.fill ?? layer.text.color,
         }
       : undefined,
+    effects: layer.effects,
+    effectsOrder: layer.effectsOrder,
   };
 
   return {
@@ -374,6 +403,43 @@ export function drawDeviceMockup(
   ctx.restore();
 }
 
+export function hexToRgba(hex: string, alpha: number): string {
+  if (!hex) return `rgba(0, 0, 0, ${alpha})`;
+  let clean = hex.replace("#", "").trim();
+  if (clean.length === 3) {
+    clean = clean.split("").map((c) => c + c).join("");
+  }
+  if (clean.length >= 6) {
+    const r = parseInt(clean.slice(0, 2), 16) || 0;
+    const g = parseInt(clean.slice(2, 4), 16) || 0;
+    const b = parseInt(clean.slice(4, 6), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+  }
+  return hex;
+}
+
+export function buildLayerGeometryPath(
+  ctx: CanvasRenderingContext2D,
+  layer: Layer,
+  width: number,
+  height: number,
+) {
+  ctx.beginPath();
+  if (layer.type === "shape" && layer.shape) {
+    const { kind } = layer.shape;
+    const radius = (layer.shape as any).radius || 0;
+    if (kind === "ellipse") {
+      ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
+    } else if (radius > 0 && typeof ctx.roundRect === "function") {
+      ctx.roundRect(-width / 2, -height / 2, width, height, radius);
+    } else {
+      ctx.rect(-width / 2, -height / 2, width, height);
+    }
+  } else {
+    ctx.rect(-width / 2, -height / 2, width, height);
+  }
+}
+
 /**
  * Render a single Layer entity to a 2D canvas context.
  */
@@ -411,8 +477,50 @@ export function drawLayer(
     ctx.transform(cosY, skewY, skewX, cosX, 0, 0);
   }
 
-  // Studio Lighting: Soft contact drop shadow
-  if (lighting && lighting.enabled) {
+  // Active layer effects partitioned by type
+  const rawEffects = layer.effects || [];
+  const activeEffects = rawEffects.filter((e) => e.enabled && e.visible);
+
+  const dropShadowFx = activeEffects.find(
+    (e): e is DropShadowLayerEffect => e.type === "dropShadow",
+  );
+  const glowFx = activeEffects.find(
+    (e): e is GlowLayerEffect => e.type === "glow",
+  );
+  const layerBlurFx = activeEffects.find(
+    (e): e is LayerBlurLayerEffect => e.type === "layerBlur",
+  );
+  const backdropBlurFx = activeEffects.find(
+    (e): e is BackdropBlurLayerEffect => e.type === "backdropBlur",
+  );
+  const liquidGlassFx = activeEffects.find(
+    (e): e is LiquidGlassLayerEffect => e.type === "liquidGlass",
+  );
+
+  // Layer Blur: stack with any existing DoF blur on ctx.filter so layer effects inherit DoF
+  if (layerBlurFx && layerBlurFx.blur > 0) {
+    const currentFilter = ctx.filter && ctx.filter !== "none" ? ctx.filter : "";
+    const blurStr = `blur(${layerBlurFx.blur}px)`;
+    ctx.filter = currentFilter ? `${currentFilter} ${blurStr}` : blurStr;
+  }
+
+  // 1. Backdrop Blur Pass (composited behind layer over lower layers)
+  if (backdropBlurFx) {
+    ctx.save();
+    const frostAlpha = Math.min(0.85, 0.25 + (backdropBlurFx.blur / 32) * 0.35);
+    ctx.fillStyle = `rgba(240, 245, 255, ${frostAlpha})`;
+    buildLayerGeometryPath(ctx, layer, width, height);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 2. Drop Shadow: Layer drop shadow or Studio Lighting soft contact drop shadow
+  if (dropShadowFx) {
+    ctx.shadowColor = hexToRgba(dropShadowFx.color || "#000000", dropShadowFx.opacity ?? 0.5);
+    ctx.shadowBlur = Math.max(0, dropShadowFx.blur ?? 12);
+    ctx.shadowOffsetX = dropShadowFx.offsetX ?? 4;
+    ctx.shadowOffsetY = dropShadowFx.offsetY ?? 4;
+  } else if (lighting && lighting.enabled) {
     ctx.shadowColor = `rgba(0, 0, 0, ${lighting.shadowOpacity || 0.35})`;
     ctx.shadowBlur = lighting.shadowBlur || 24;
     ctx.shadowOffsetX = -(lighting.lightX || -300) * 0.04;
@@ -501,7 +609,43 @@ export function drawLayer(
     }
   }
 
-  // Directional Specular Sheen on tilted surfaces
+  // 3. Glow Pass (composited over/around layer)
+  if (glowFx) {
+    ctx.save();
+    if (glowFx.blend === "add") {
+      ctx.globalCompositeOperation = "lighter";
+    }
+    const glowAlpha = Math.min(1, Math.max(0, 0.6 * (glowFx.intensity ?? 1)));
+    ctx.shadowColor = hexToRgba(glowFx.color || "#6e6ef5", glowAlpha);
+    ctx.shadowBlur = Math.max(1, (glowFx.blur ?? 16) * (glowFx.intensity ?? 1));
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = hexToRgba(glowFx.color || "#6e6ef5", glowAlpha * 0.5);
+    ctx.lineWidth = Math.max(1, (glowFx.thickness ?? 0.3) * 6);
+    buildLayerGeometryPath(ctx, layer, width, height);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 4. Liquid Glass Pass (surface highlight sheen & refraction border)
+  if (liquidGlassFx) {
+    ctx.save();
+    const highlightAlpha = Math.min(1, Math.max(0, liquidGlassFx.highlight ?? 0.4));
+    const glassGrad = ctx.createLinearGradient(-width / 2, -height / 2, width / 2, height / 2);
+    glassGrad.addColorStop(0, `rgba(255, 255, 255, ${highlightAlpha * 0.6})`);
+    glassGrad.addColorStop(0.4, "rgba(255, 255, 255, 0.05)");
+    glassGrad.addColorStop(1, `rgba(200, 230, 255, ${highlightAlpha * 0.3})`);
+    ctx.fillStyle = glassGrad;
+    buildLayerGeometryPath(ctx, layer, width, height);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(1, (liquidGlassFx.refraction ?? 0.3) * 0.8)})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Directional Specular Sheen on tilted surfaces (inherits across all layer effects)
   if (lighting && lighting.enabled && (lighting.intensity || 0) > 0.1 && (rotateX !== 0 || rotateY !== 0)) {
     ctx.save();
     ctx.globalCompositeOperation = "screen";
@@ -521,9 +665,96 @@ export function drawLayer(
 export interface RenderSceneFrameOptions {
   width: number;
   height: number;
-  bloom?: BloomSettings;
   lighting?: SceneLighting;
-  optics?: OpticsSettings;
+  offscreenBloomCanvas?: HTMLCanvasElement | null;
+  backgroundColor?: string;
+  sourceCanvas?: HTMLCanvasElement | null;
+}
+
+// Module-level cached canvases for motion blur sub-frame accumulation
+let mbAccumCanvas: HTMLCanvasElement | null = null;
+let mbSampleCanvas: HTMLCanvasElement | null = null;
+
+function getMotionBlurCanvases(width: number, height: number) {
+  if (typeof document === "undefined") return null;
+  if (!mbAccumCanvas) mbAccumCanvas = document.createElement("canvas");
+  if (!mbSampleCanvas) mbSampleCanvas = document.createElement("canvas");
+  if (mbAccumCanvas.width !== width || mbAccumCanvas.height !== height) {
+    mbAccumCanvas.width = width;
+    mbAccumCanvas.height = height;
+  }
+  if (mbSampleCanvas.width !== width || mbSampleCanvas.height !== height) {
+    mbSampleCanvas.width = width;
+    mbSampleCanvas.height = height;
+  }
+  const accumCtx = mbAccumCanvas.getContext("2d");
+  const sampleCtx = mbSampleCanvas.getContext("2d");
+  if (!accumCtx || !sampleCtx) return null;
+  return { accumCanvas: mbAccumCanvas, accumCtx, sampleCanvas: mbSampleCanvas, sampleCtx };
+}
+
+/**
+ * Draws all scene layers at a specific sub-frame index, including camera projection,
+ * depth sorting, and per-layer Depth of Field (gated by effect-stack toggle).
+ */
+export function renderLayersAtFrame(
+  targetCtx: CanvasRenderingContext2D,
+  scene: Scene,
+  frame: number,
+  width: number,
+  height: number,
+  lighting?: SceneLighting,
+  dofFx?: DepthOfFieldEffect,
+  requestRedraw?: () => void,
+) {
+  if (!scene || !scene.layers) return;
+  const animationBlocks = scene.animationBlocks || [];
+  const currentCamera = sampleCamera(scene.camera, animationBlocks, frame);
+
+  // 3D Depth sorting: back-to-front painter's algorithm
+  const sortedLayers = [...scene.layers].sort(
+    (a, b) => (b.transform.depth ?? 0) - (a.transform.depth ?? 0),
+  );
+
+  for (const layer of sortedLayers) {
+    const { effectiveLayer } = getScreenTransform(
+      layer,
+      animationBlocks,
+      frame,
+      currentCamera,
+      { width, height },
+      scene.layers,
+    );
+
+    if (!effectiveLayer.visible || effectiveLayer.opacity <= 0) continue;
+
+    // Depth of field: blur each layer proportionally to distance from camera.focusDistance
+    // Gated by effect-stack toggle rather than always-on
+    if (dofFx && dofFx.enabled && dofFx.visible) {
+      const layerDepth = layer.transform.depth ?? 0;
+      const focusDist = currentCamera.focusDistance ?? 1000;
+      const dist = Math.abs(layerDepth - focusDist);
+      const outOfFocus = Math.max(0, dist - (dofFx.focusRange ?? 200) / 2);
+      const apertureFactor = 2.8 / (dofFx.aperture || 2.8);
+      const blurAmount = Math.min(25, (outOfFocus / 40) * apertureFactor * (dofFx.bokehScale ?? 1));
+      if (blurAmount > 0.05) {
+        targetCtx.filter = `blur(${blurAmount.toFixed(2)}px)`;
+      } else {
+        targetCtx.filter = "none";
+      }
+    } else {
+      targetCtx.filter = "none";
+    }
+
+    drawLayer(targetCtx, effectiveLayer, requestRedraw, lighting);
+    targetCtx.filter = "none";
+  }
+}
+
+export interface RenderSceneFrameOptions {
+  width: number;
+  height: number;
+  lighting?: SceneLighting;
   offscreenBloomCanvas?: HTMLCanvasElement | null;
   backgroundColor?: string;
   sourceCanvas?: HTMLCanvasElement | null;
@@ -532,7 +763,10 @@ export interface RenderSceneFrameOptions {
 /**
  * Pure frame rendering function: draws the entire scene at a specific frame index
  * into the target canvas context, including all animation blocks, camera projection,
- * depth-sorted 3D layers, depth of field blur, lighting, and optics post-processing.
+ * depth-sorted 3D layers, depth of field blur, motion blur, lighting, and scene effect post-processing.
+ *
+ * Full ten-effect fixed composite order:
+ * Color Grade -> Depth of Field -> Motion Blur -> Bloom -> Vignette -> Chromatic Aberration -> Glitch -> Film Grain -> Ghost -> Edge Fade
  */
 export function renderSceneFrame(
   ctx: CanvasRenderingContext2D,
@@ -543,9 +777,7 @@ export function renderSceneFrame(
   const {
     width,
     height,
-    bloom,
     lighting = scene.lighting,
-    optics,
     offscreenBloomCanvas,
     backgroundColor = "#000000",
     sourceCanvas,
@@ -557,61 +789,123 @@ export function renderSceneFrame(
   ctx.fillRect(0, 0, width, height);
 
   if (scene && scene.layers) {
-    const animationBlocks = scene.animationBlocks || [];
-    const currentCamera = sampleCamera(scene.camera, animationBlocks, frame);
+    const activeEffects = scene.effects ? scene.effects.filter((e) => e.enabled && e.visible) : [];
 
-    // 3D Depth sorting: back-to-front painter's algorithm
-    const sortedLayers = [...scene.layers].sort(
-      (a, b) => (b.transform.depth ?? 0) - (a.transform.depth ?? 0),
-    );
+    const dofFx = activeEffects.find((e): e is DepthOfFieldEffect => e.type === "depthOfField");
+    const motionBlurFx = activeEffects.find((e): e is MotionBlurEffect => e.type === "motionBlur");
 
-    for (const layer of sortedLayers) {
-      const { effectiveLayer } = getScreenTransform(
-        layer,
-        animationBlocks,
-        frame,
-        currentCamera,
-        { width, height },
-        scene.layers,
-      );
+    // Motion Blur must run before the standard layer-draw loop produces the canvas the other nine effects operate on.
+    const motionSamples = motionBlurFx && motionBlurFx.samples ? Math.max(1, Math.min(12, Math.round(motionBlurFx.samples))) : 1;
+    const shutterAngle = motionBlurFx ? Math.max(0, Math.min(360, motionBlurFx.shutterAngle ?? 180)) : 0;
+    const isMotionBlurActive = Boolean(motionBlurFx && motionSamples > 1 && shutterAngle > 0);
 
-      if (!effectiveLayer.visible || effectiveLayer.opacity <= 0) continue;
+    if (isMotionBlurActive) {
+      const mb = getMotionBlurCanvases(width, height);
+      if (mb) {
+        const { accumCanvas, accumCtx, sampleCanvas, sampleCtx } = mb;
+        accumCtx.setTransform(1, 0, 0, 1, 0, 0);
+        accumCtx.clearRect(0, 0, width, height);
 
-      // Depth of field: blur each layer proportionally to distance from camera.focusDistance
-      const blurAmount = dofBlurPx(layer, currentCamera);
-      if (blurAmount > 0.05) {
-        ctx.filter = `blur(${blurAmount.toFixed(2)}px)`;
+        const shutterFraction = shutterAngle / 360;
+
+        for (let s = 0; s < motionSamples; s++) {
+          // Sub-frame sampling centered on current frame
+          const subFrame = frame - (shutterFraction * 0.5) + (s / (motionSamples - 1)) * shutterFraction;
+
+          sampleCtx.setTransform(1, 0, 0, 1, 0, 0);
+          sampleCtx.clearRect(0, 0, width, height);
+
+          renderLayersAtFrame(sampleCtx, scene, subFrame, width, height, lighting, dofFx);
+
+          accumCtx.save();
+          accumCtx.globalCompositeOperation = "source-over";
+          accumCtx.globalAlpha = 1 / (s + 1);
+          accumCtx.drawImage(sampleCanvas, 0, 0);
+          accumCtx.restore();
+        }
+
+        ctx.drawImage(accumCanvas, 0, 0);
       } else {
-        ctx.filter = "none";
+        renderLayersAtFrame(ctx, scene, frame, width, height, lighting, dofFx);
       }
-
-      drawLayer(ctx, effectiveLayer, undefined, lighting);
-      ctx.filter = "none";
+    } else {
+      // Standard layer draw (with per-layer Depth of Field if enabled)
+      renderLayersAtFrame(ctx, scene, frame, width, height, lighting, dofFx);
     }
 
-    // Bloom post-processing pass over full canvas
-    if (bloom?.enabled && sourceCanvas) {
-      const bloomCanvas =
-        offscreenBloomCanvas || document.createElement("canvas");
-      applyBloom(
-        sourceCanvas,
-        bloomCanvas,
-        bloom.threshold ?? 200,
-        bloom.blurPx ?? 16,
-        bloom.intensity ?? 1.0,
-      );
-    }
+    // Unified Scene Effects Post-Processing Pass
+    // Fixed composite order:
+    // Color Grade -> Depth of Field -> Motion Blur -> Bloom -> Vignette -> Chromatic Aberration -> Glitch -> Film Grain -> Ghost -> Edge Fade
+    if (sourceCanvas && activeEffects.length > 0) {
+      // 1. Color Grade
+      const colorGradeFx = activeEffects.find((e): e is ColorGradeEffect => e.type === "colorGrade");
+      if (colorGradeFx) {
+        applyColorGrade(sourceCanvas, colorGradeFx.exposure, colorGradeFx.contrast, colorGradeFx.saturation);
+      }
 
-    // Film-grade optics post-processing passes
-    if (optics && sourceCanvas) {
-      if ((optics.chromaticAberration ?? 0) > 0) {
-        applyChromaticAberration(sourceCanvas, optics.chromaticAberration * 4);
+      // 2. Depth of Field (applied per-layer during layer loop above)
+      // 3. Motion Blur (applied before standard layer-draw loop above)
+
+      // 4. Bloom
+      const bloomFx = activeEffects.find((e): e is BloomEffect => e.type === "bloom");
+      if (bloomFx && bloomFx.intensity > 0) {
+        const bloomCanvas =
+          offscreenBloomCanvas ||
+          (typeof document !== "undefined" ? document.createElement("canvas") : (null as unknown as HTMLCanvasElement));
+        if (bloomCanvas) {
+          applyBloom(
+            sourceCanvas,
+            bloomCanvas,
+            bloomFx.threshold * 255,
+            16,
+            bloomFx.intensity,
+          );
+        }
       }
-      if ((optics.vignette ?? 0) > 0) {
-        applyVignette(sourceCanvas, optics.vignette);
+
+      // 5. Vignette
+      const vignetteFx = activeEffects.find((e): e is VignetteEffect => e.type === "vignette");
+      if (vignetteFx && vignetteFx.intensity > 0) {
+        applyVignette(sourceCanvas, vignetteFx.intensity);
       }
-      if ((optics.filmGrain ?? 0) > 0) {
-        applyFilmGrain(sourceCanvas, optics.filmGrain);
+
+      // 6. Chromatic Aberration
+      const chromaFx = activeEffects.find((e): e is ChromaticAberrationEffect => e.type === "chromaticAberration");
+      if (chromaFx && chromaFx.offset > 0) {
+        applyChromaticAberration(sourceCanvas, chromaFx.offset);
+      }
+
+      // 7. Glitch
+      const glitchFx = activeEffects.find((e): e is GlitchEffect => e.type === "glitch");
+      if (glitchFx && glitchFx.intensity > 0) {
+        applyGlitch(sourceCanvas, glitchFx.intensity, glitchFx.speed);
+      }
+
+      // 8. Film Grain
+      const grainFx = activeEffects.find((e): e is FilmGrainEffect => e.type === "filmGrain");
+      if (grainFx && grainFx.intensity > 0) {
+        applyFilmGrain(sourceCanvas, grainFx.intensity, grainFx.size);
+      }
+
+      // 9. Ghost
+      const ghostFx = activeEffects.find((e): e is GhostEffect => e.type === "ghost");
+      if (ghostFx && ghostFx.opacity > 0) {
+        applyGhost(sourceCanvas, ghostFx.opacity, ghostFx.offset, ghostFx.blur);
+      }
+
+      // 10. Edge Fade
+      const edgeFadeFx = activeEffects.find((e): e is EdgeFadeEffect => e.type === "edgeFade");
+      if (
+        edgeFadeFx &&
+        (edgeFadeFx.top > 0 || edgeFadeFx.right > 0 || edgeFadeFx.bottom > 0 || edgeFadeFx.left > 0)
+      ) {
+        applyEdgeFade(
+          sourceCanvas,
+          edgeFadeFx.top,
+          edgeFadeFx.right,
+          edgeFadeFx.bottom,
+          edgeFadeFx.left,
+        );
       }
     }
   }

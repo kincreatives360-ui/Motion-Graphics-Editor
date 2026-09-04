@@ -28,9 +28,13 @@ import { Timeline } from "./components/Timeline";
 import { PresetsSheet } from "./components/PresetsSheet";
 import { ExportModal } from "./components/ExportModal";
 import { useEditorShortcuts } from "./hooks/useEditorShortcuts";
+import { Route, Switch, Link } from "wouter";
+import { R3FSpikeCanvas } from "./canvas/R3FSpikeCanvas";
+import { R3FSpikePage } from "./pages/R3FSpikePage";
 import { SELECT_GROUP_TOOLS } from "./components/ToolSelectDropdown";
 
 type BackgroundMode = "Color" | "Image" | "Shader";
+
 
 function IconButton({
   label,
@@ -196,6 +200,7 @@ function Stage() {
   const setExportModalOpen = useEditorUIStore((state) => state.setExportModalOpen);
 
   const [selectDropdownOpen, setSelectDropdownOpen] = useState(false);
+  const [useR3FSpikeCanvas, setUseR3FSpikeCanvas] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -240,7 +245,7 @@ function Stage() {
 
   return (
     <section className="center-stage" aria-label="Composition stage">
-      <CanvasStage />
+      {useR3FSpikeCanvas ? <R3FSpikeCanvas /> : <CanvasStage />}
       <div className="stage-tools" role="toolbar" aria-label="Canvas tools">
         {/* Dropdown trigger button (button:nth-of-type(1)) */}
         <button
@@ -328,6 +333,16 @@ function Stage() {
         ))}
         <div className="tool-divider" />
         <button
+          className={`tool-button ${useR3FSpikeCanvas ? "active bg-cyan-900/60 text-cyan-300 border-cyan-500/50" : ""}`}
+          type="button"
+          aria-label="Toggle R3F Spike Canvas mode"
+          title="Toggle R3F Spike Canvas mode"
+          data-testid="button-toggle-r3f-spike"
+          onClick={() => setUseR3FSpikeCanvas((prev) => !prev)}
+        >
+          <Sparkles size={13} strokeWidth={1.6} />
+        </button>
+        <button
           className="tool-button play"
           type="button"
           aria-label={playing ? "Pause preview" : "Play preview"}
@@ -372,10 +387,14 @@ function Editor() {
 function App() {
   return (
     <TooltipProvider>
-      <Editor />
+      <Switch>
+        <Route path="/r3f-spike" component={R3FSpikePage} />
+        <Route component={Editor} />
+      </Switch>
       <Toaster />
     </TooltipProvider>
   );
 }
+
 
 export default App;

@@ -1,4 +1,5 @@
 import React, { useRef, useCallback } from "react";
+import { ScrubbableLabel } from "@/hooks/useScrubbableNumber";
 
 interface CubicBezierEditorProps {
   value?: [number, number, number, number];
@@ -249,7 +250,17 @@ export function CubicBezierEditor({
       {/* Numeric inputs for fine-grain editing with labels */}
       <div className="grid grid-cols-4 gap-1.5 pt-0.5">
         <div>
-          <label htmlFor="bezier-p1-x" className="text-[8px] text-[#717684] block font-mono">X1</label>
+          <ScrubbableLabel
+            value={x1}
+            onChange={(newX1) => onChange([Math.max(0, Math.min(1, Math.round(newX1 * 100) / 100)), y1, x2, y2])}
+            min={0}
+            max={1}
+            step={0.01}
+            className="text-[8px] text-[#717684] block font-mono hover:text-[#38bdf8] transition-colors select-none"
+            title="Drag horizontal to scrub X1 (Shift: fast, Alt: precision)"
+          >
+            X1
+          </ScrubbableLabel>
           <input
             id="bezier-p1-x"
             type="number"
@@ -263,7 +274,17 @@ export function CubicBezierEditor({
           />
         </div>
         <div>
-          <label htmlFor="bezier-p1-y" className="text-[8px] text-[#717684] block font-mono">Y1</label>
+          <ScrubbableLabel
+            value={y1}
+            onChange={(newY1) => onChange([x1, Math.max(-0.4, Math.min(1.4, Math.round(newY1 * 100) / 100)), x2, y2])}
+            min={-0.4}
+            max={1.4}
+            step={0.01}
+            className="text-[8px] text-[#717684] block font-mono hover:text-[#38bdf8] transition-colors select-none"
+            title="Drag horizontal to scrub Y1 (Shift: fast, Alt: precision)"
+          >
+            Y1
+          </ScrubbableLabel>
           <input
             id="bezier-p1-y"
             type="number"
@@ -277,7 +298,17 @@ export function CubicBezierEditor({
           />
         </div>
         <div>
-          <label htmlFor="bezier-p2-x" className="text-[8px] text-[#717684] block font-mono">X2</label>
+          <ScrubbableLabel
+            value={x2}
+            onChange={(newX2) => onChange([x1, y1, Math.max(0, Math.min(1, Math.round(newX2 * 100) / 100)), y2])}
+            min={0}
+            max={1}
+            step={0.01}
+            className="text-[8px] text-[#717684] block font-mono hover:text-[#38bdf8] transition-colors select-none"
+            title="Drag horizontal to scrub X2 (Shift: fast, Alt: precision)"
+          >
+            X2
+          </ScrubbableLabel>
           <input
             id="bezier-p2-x"
             type="number"
@@ -291,7 +322,17 @@ export function CubicBezierEditor({
           />
         </div>
         <div>
-          <label htmlFor="bezier-p2-y" className="text-[8px] text-[#717684] block font-mono">Y2</label>
+          <ScrubbableLabel
+            value={y2}
+            onChange={(newY2) => onChange([x1, y1, x2, Math.max(-0.4, Math.min(1.4, Math.round(newY2 * 100) / 100))])}
+            min={-0.4}
+            max={1.4}
+            step={0.01}
+            className="text-[8px] text-[#717684] block font-mono hover:text-[#38bdf8] transition-colors select-none"
+            title="Drag horizontal to scrub Y2 (Shift: fast, Alt: precision)"
+          >
+            Y2
+          </ScrubbableLabel>
           <input
             id="bezier-p2-y"
             type="number"
