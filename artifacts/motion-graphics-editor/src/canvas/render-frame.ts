@@ -14,7 +14,12 @@ import type {
   ColorGradeEffect,
   GhostEffect,
   GlitchEffect,
-  EdgeFadeEffect,
+  LayerEffect,
+  DropShadowLayerEffect,
+  GlowLayerEffect,
+  BackdropBlurLayerEffect,
+  LayerBlurLayerEffect,
+  LiquidGlassLayerEffect,
 } from "../store/editor-store";
 import {
   computeRenderedLayer,
@@ -225,6 +230,8 @@ export function getScreenTransform(
           color: rendered.fill ?? layer.text.color,
         }
       : undefined,
+    effects: layer.effects,
+    effectsOrder: layer.effectsOrder,
   };
 
   return {
@@ -395,6 +402,43 @@ export function drawDeviceMockup(
   ctx.restore();
 }
 
+export function hexToRgba(hex: string, alpha: number): string {
+  if (!hex) return `rgba(0, 0, 0, ${alpha})`;
+  let clean = hex.replace("#", "").trim();
+  if (clean.length === 3) {
+    clean = clean.split("").map((c) => c + c).join("");
+  }
+  if (clean.length >= 6) {
+    const r = parseInt(clean.slice(0, 2), 16) || 0;
+    const g = parseInt(clean.slice(2, 4), 16) || 0;
+    const b = parseInt(clean.slice(4, 6), 16) || 0;
+    return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, alpha))})`;
+  }
+  return hex;
+}
+
+export function buildLayerGeometryPath(
+  ctx: CanvasRenderingContext2D,
+  layer: Layer,
+  width: number,
+  height: number,
+) {
+  ctx.beginPath();
+  if (layer.type === "shape" && layer.shape) {
+    const { kind } = layer.shape;
+    const radius = (layer.shape as any).radius || 0;
+    if (kind === "ellipse") {
+      ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
+    } else if (radius > 0 && typeof ctx.roundRect === "function") {
+      ctx.roundRect(-width / 2, -height / 2, width, height, radius);
+    } else {
+      ctx.rect(-width / 2, -height / 2, width, height);
+    }
+  } else {
+    ctx.rect(-width / 2, -height / 2, width, height);
+  }
+}
+
 /**
  * Render a single Layer entity to a 2D canvas context.
  */
@@ -432,8 +476,50 @@ export function drawLayer(
     ctx.transform(cosY, skewY, skewX, cosX, 0, 0);
   }
 
-  // Studio Lighting: Soft contact drop shadow
-  if (lighting && lighting.enabled) {
+  // Active layer effects partitioned by type
+  const rawEffects = layer.effects || [];
+  const activeEffects = rawEffects.filter((e) => e.enabled && e.visible);
+
+  const dropShadowFx = activeEffects.find(
+    (e): e is DropShadowLayerEffect => e.type === "dropShadow",
+  );
+  const glowFx = activeEffects.find(
+    (e): e is GlowLayerEffect => e.type === "glow",
+  );
+  const layerBlurFx = activeEffects.find(
+    (e): e is LayerBlurLayerEffect => e.type === "layerBlur",
+  );
+  const backdropBlurFx = activeEffects.find(
+    (e): e is BackdropBlurLayerEffect => e.type === "backdropBlur",
+  );
+  const liquidGlassFx = activeEffects.find(
+    (e): e is LiquidGlassLayerEffect => e.type === "liquidGlass",
+  );
+
+  // Layer Blur: stack with any existing DoF blur on ctx.filter so layer effects inherit DoF
+  if (layerBlurFx && layerBlurFx.blur > 0) {
+    const currentFilter = ctx.filter && ctx.filter !== "none" ? ctx.filter : "";
+    const blurStr = `blur(${layerBlurFx.blur}px)`;
+    ctx.filter = currentFilter ? `${currentFilter} ${blurStr}` : blurStr;
+  }
+
+  // 1. Backdrop Blur Pass (composited behind layer over lower layers)
+  if (backdropBlurFx) {
+    ctx.save();
+    const frostAlpha = Math.min(0.85, 0.25 + (backdropBlurFx.blur / 32) * 0.35);
+    ctx.fillStyle = `rgba(240, 245, 255, ${frostAlpha})`;
+    buildLayerGeometryPath(ctx, layer, width, height);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 2. Drop Shadow: Layer drop shadow or Studio Lighting soft contact drop shadow
+  if (dropShadowFx) {
+    ctx.shadowColor = hexToRgba(dropShadowFx.color || "#000000", dropShadowFx.opacity ?? 0.5);
+    ctx.shadowBlur = Math.max(0, dropShadowFx.blur ?? 12);
+    ctx.shadowOffsetX = dropShadowFx.offsetX ?? 4;
+    ctx.shadowOffsetY = dropShadowFx.offsetY ?? 4;
+  } else if (lighting && lighting.enabled) {
     ctx.shadowColor = `rgba(0, 0, 0, ${lighting.shadowOpacity || 0.35})`;
     ctx.shadowBlur = lighting.shadowBlur || 24;
     ctx.shadowOffsetX = -(lighting.lightX || -300) * 0.04;
@@ -522,7 +608,43 @@ export function drawLayer(
     }
   }
 
-  // Directional Specular Sheen on tilted surfaces
+  // 3. Glow Pass (composited over/around layer)
+  if (glowFx) {
+    ctx.save();
+    if (glowFx.blend === "add") {
+      ctx.globalCompositeOperation = "lighter";
+    }
+    const glowAlpha = Math.min(1, Math.max(0, 0.6 * (glowFx.intensity ?? 1)));
+    ctx.shadowColor = hexToRgba(glowFx.color || "#6e6ef5", glowAlpha);
+    ctx.shadowBlur = Math.max(1, (glowFx.blur ?? 16) * (glowFx.intensity ?? 1));
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.strokeStyle = hexToRgba(glowFx.color || "#6e6ef5", glowAlpha * 0.5);
+    ctx.lineWidth = Math.max(1, (glowFx.thickness ?? 0.3) * 6);
+    buildLayerGeometryPath(ctx, layer, width, height);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 4. Liquid Glass Pass (surface highlight sheen & refraction border)
+  if (liquidGlassFx) {
+    ctx.save();
+    const highlightAlpha = Math.min(1, Math.max(0, liquidGlassFx.highlight ?? 0.4));
+    const glassGrad = ctx.createLinearGradient(-width / 2, -height / 2, width / 2, height / 2);
+    glassGrad.addColorStop(0, `rgba(255, 255, 255, ${highlightAlpha * 0.6})`);
+    glassGrad.addColorStop(0.4, "rgba(255, 255, 255, 0.05)");
+    glassGrad.addColorStop(1, `rgba(200, 230, 255, ${highlightAlpha * 0.3})`);
+    ctx.fillStyle = glassGrad;
+    buildLayerGeometryPath(ctx, layer, width, height);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(1, (liquidGlassFx.refraction ?? 0.3) * 0.8)})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Directional Specular Sheen on tilted surfaces (inherits across all layer effects)
   if (lighting && lighting.enabled && (lighting.intensity || 0) > 0.1 && (rotateX !== 0 || rotateY !== 0)) {
     ctx.save();
     ctx.globalCompositeOperation = "screen";
