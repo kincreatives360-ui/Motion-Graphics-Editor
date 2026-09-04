@@ -1271,7 +1271,6 @@ export function Inspector() {
                     <p className="text-[10px] text-[#9ca0a8] mb-1 font-semibold">
                       No Camera Movements
                     </p>
-                    <p className="text-[8.5px] text-[#63666d] max-w-[180px] leading-relaxed mb-3">
                     <p className="text-[8.5px] text-[#63666d] max-w-[220px] leading-relaxed mb-3">
                       Add camera moves to animate camera position and FOV with multiplane 3D parallax effects.
                     </p>
@@ -2535,7 +2534,6 @@ export function Inspector() {
                     <p className="text-[10px] text-[#9ca0a8] mb-1 font-semibold">
                       No Animation Blocks
                     </p>
-                    <p className="text-[8.5px] text-[#63666d] max-w-[170px] leading-relaxed mb-3">
                     <p className="text-[8.5px] text-[#63666d] max-w-[220px] leading-relaxed mb-3">
                       Add transitions, scale pulses, slide-ins, and keyframes to animate this layer.
                     </p>
