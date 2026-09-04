@@ -147,6 +147,7 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
                 : "No matching assets"}
             </span>
             <p className="text-[9.5px] text-[#55657e] max-w-[170px] leading-relaxed mb-3">
+            <p className="text-[9.5px] text-[#55657e] max-w-[220px] leading-relaxed mb-3">
               {assets.length === 0
                 ? "Drag image files onto the canvas or click import below."
                 : "Try a different search term."}
