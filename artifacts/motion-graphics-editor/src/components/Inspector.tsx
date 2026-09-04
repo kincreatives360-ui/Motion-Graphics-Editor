@@ -55,6 +55,7 @@ import {
 } from "../store/editor-store";
 import {
   type AnimationBlock,
+  type PresetAnimationBlock,
   type BlockPreset,
   type KeyframeTrackBlock,
   type Keyframe,
@@ -64,6 +65,7 @@ import {
   sampleKeyframeTrack,
 } from "../store/animation-blocks";
 import { CubicBezierEditor } from "./CubicBezierEditor";
+import { SaveAnimationPresetModal } from "./SavePresetModals";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Accordion,
@@ -447,7 +449,7 @@ export function Inspector() {
 
   const camera = activeScene?.camera || { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 };
   const cameraBlocks = (activeScene?.animationBlocks || []).filter(
-    (b) => b.preset === "camera-move" || b.layerId === null,
+    (b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || b.layerId === null),
   );
   const selectedLayer =
     selectedLayerIds.length === 1
@@ -1789,10 +1791,10 @@ export function Inspector() {
                         <span className="select-wrap">
                           <select
                             className="select-input text-[9px]"
-                            value={selectedLayer.mockupFrame || "none"}
+                            value={selectedLayer.mockup || "none"}
                             onChange={(e) =>
                               updateLayer(selectedLayer.id, {
-                                mockupFrame: e.target.value === "none" ? undefined : (e.target.value as any),
+                                mockup: e.target.value === "none" ? undefined : (e.target.value as any),
                               })
                             }
                           >
@@ -2277,14 +2279,12 @@ export function Inspector() {
                               className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
                               onClick={() => {
                                 const start = Math.max(0, currentFrame);
-                                addAnimationBlock({
+                                addAnimationBlock(activeSceneId, {
                                   layerId: selectedLayer.id,
-                                  name: "Pop & Rise",
                                   preset: "fade-in",
                                   startFrame: start,
-                                  durationFrames: 24,
+                                  endFrame: start + 24,
                                   easing: "spring",
-                                  deltaY: -20,
                                 });
                               }}
                             >
@@ -2295,14 +2295,12 @@ export function Inspector() {
                               className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
                               onClick={() => {
                                 const start = Math.max(0, currentFrame);
-                                addAnimationBlock({
+                                addAnimationBlock(activeSceneId, {
                                   layerId: selectedLayer.id,
-                                  name: "Punch Scale",
-                                  preset: "scale-spring",
+                                  preset: "scale-in",
                                   startFrame: start,
-                                  durationFrames: 30,
+                                  endFrame: start + 30,
                                   easing: "spring",
-                                  scaleTo: 1.0,
                                 });
                               }}
                             >
@@ -2313,14 +2311,12 @@ export function Inspector() {
                               className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
                               onClick={() => {
                                 const start = Math.max(0, currentFrame);
-                                addAnimationBlock({
+                                addAnimationBlock(activeSceneId, {
                                   layerId: selectedLayer.id,
-                                  name: "Kinetic Slide",
-                                  preset: "slide-left",
+                                  preset: "slide-in-left",
                                   startFrame: start,
-                                  durationFrames: 25,
+                                  endFrame: start + 25,
                                   easing: "spring",
-                                  deltaX: 80,
                                 });
                               }}
                             >
@@ -2582,7 +2578,7 @@ export function Inspector() {
                                     } else if (kfTrack.property === "opacity") {
                                       defaultVal = selectedLayer.opacity ?? 1;
                                     } else if (kfTrack.property === "rotation") {
-                                      defaultVal = selectedLayer.rotation ?? 0;
+                                      defaultVal = selectedLayer.transform.rotation ?? 0;
                                     } else if (kfTrack.property in selectedLayer) {
                                       defaultVal = (selectedLayer as any)[kfTrack.property] ?? 0;
                                     }
@@ -2766,18 +2762,19 @@ export function Inspector() {
                         );
                       }
 
+                      const presetBlock = block as PresetAnimationBlock;
                       return (
                       <div
-                        key={block.id}
+                        key={presetBlock.id}
                         className="bg-[#15171b] border border-[#23262c] rounded p-2.5 flex flex-col gap-2.5 shadow-sm"
                       >
                         {/* Block Header with Preset Action Menu */}
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
                             <span className="px-1.5 py-0.5 rounded bg-[#1e293b] text-[#38bdf8] border border-[#0369a1]/40 font-mono text-[8.5px] font-medium capitalize">
-                              {typeof block.preset === "string"
-                                ? block.preset.replace(/-/g, " ")
-                                : (block.preset as any)?.label || (block.preset as any)?.id || "effect"}
+                              {typeof presetBlock.preset === "string"
+                                ? presetBlock.preset.replace(/-/g, " ")
+                                : (presetBlock.preset as any)?.label || (presetBlock.preset as any)?.id || "effect"}
                             </span>
                           </div>
                           <div className="flex items-center gap-1">

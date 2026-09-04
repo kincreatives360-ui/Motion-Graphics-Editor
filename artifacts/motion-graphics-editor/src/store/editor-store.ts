@@ -12,6 +12,8 @@ import type {
 import { isKeyframeTrack } from "./animation-blocks";
 import type { AnimationPreset, SceneTemplate } from "../presets/preset-library";
 
+export type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never;
+
 export type LayerType = "shape" | "text" | "image" | "group";
 export type MockupType = "none" | "iphone" | "macbook" | "safari";
 
@@ -146,7 +148,7 @@ export function createDefaultLayerEffect(type: LayerEffectType): LayerEffect {
         highlight: 0.4,
       };
     default:
-      return { ...base, type } as LayerEffect;
+      return { ...base, type } as unknown as LayerEffect;
   }
 }
 
@@ -164,16 +166,16 @@ export function isLayerEffectAvailable(
 
 export interface Layer {
   id: string;
-  parentId: string | null; // for grouping
-  type: LayerType;
+  parentId?: string | null;
   name: string;
+  type: LayerType;
   transform: Transform;
   opacity: number; // 0-1
   visible: boolean;
   locked: boolean;
   mockup?: MockupType;
-  effects: LayerEffect[];
-  effectsOrder: string[];
+  effects?: LayerEffect[];
+  effectsOrder?: string[];
   // type-specific payload, keep it a discriminated union on `type`
   shape?: {
     kind: "rect" | "ellipse" | "path";
@@ -219,6 +221,7 @@ export interface Camera {
   fov: number; // degrees
   focalLengthMm?: number; // 24, 35, 50, 85 mm
   apertureFStop?: number; // 1.4, 2.0, 2.8, 5.6, 11
+  aperture?: number; // alias for apertureFStop
   focusDistance: number; // for depth of field
   target?: { x: number; y: number; z: number }; // orbit anchor point
 }
@@ -385,7 +388,7 @@ export function createDefaultSceneEffect(type: SceneEffectType): SceneEffect {
     case "edgeFade":
       return { ...base, type: "edgeFade", top: 0, right: 0, bottom: 0, left: 0 };
     default:
-      return { ...base, type } as SceneEffect;
+      return { ...base, type } as unknown as SceneEffect;
   }
 }
 
@@ -487,7 +490,7 @@ export interface EditorStoreState extends EditorDocument {
   ) => void;
   addAnimationBlock: (
     sceneId: string | undefined,
-    block: Omit<AnimationBlock, "id"> & { id?: string },
+    block: DistributiveOmit<AnimationBlock, "id"> & { id?: string },
   ) => string;
   updateAnimationBlock: (id: string, partial: Partial<AnimationBlock>) => void;
   removeAnimationBlock: (id: string) => void;
@@ -723,11 +726,16 @@ export const useEditorStore = create<EditorStoreState>()(
           effectsOrder: layer.effectsOrder ? [...layer.effectsOrder] : (layer.effects ? layer.effects.map((e) => e.id) : []),
         }));
 
-        const remappedBlocks: AnimationBlock[] = template.animationBlocks.map((block) => ({
-          ...block,
-          id: `anim-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-          layerId: block.layerId && idMap.has(block.layerId) ? idMap.get(block.layerId)! : (block.layerId ? null : null),
-        }));
+        const remappedBlocks: AnimationBlock[] = template.animationBlocks.map((block) => {
+          const remappedLayerId = block.layerId && idMap.has(block.layerId)
+            ? idMap.get(block.layerId)!
+            : block.layerId;
+          return {
+            ...block,
+            id: `anim-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            layerId: remappedLayerId,
+          } as AnimationBlock;
+        });
 
         if (mode === "new") {
           const newSceneId = `scene-${Date.now()}`;
@@ -1112,7 +1120,7 @@ export const useEditorStore = create<EditorStoreState>()(
             while (curr) {
               if (curr === layerId) return state;
               const parentLayer = scene.layers.find((l) => l.id === curr);
-              curr = parentLayer ? parentLayer.parentId : null;
+              curr = parentLayer ? (parentLayer.parentId ?? null) : null;
             }
           }
 
@@ -1835,13 +1843,15 @@ export const useEditorStore = create<EditorStoreState>()(
           Math.min(maxFrames, blockData.endFrame ?? startFrame + defaultDuration),
         );
 
+        const presetBlockData = blockData as any;
         const presetVal: BlockPreset =
-          typeof blockData.preset === "string"
-            ? (blockData.preset as BlockPreset)
-            : (blockData.preset as any)?.id || "fade-in";
+          typeof presetBlockData.preset === "string"
+            ? (presetBlockData.preset as BlockPreset)
+            : (presetBlockData.preset as any)?.id || "fade-in";
 
         const isCameraBlock = presetVal === "camera-move" || blockData.layerId === null;
 
+        const cameraToVal = "cameraTo" in blockData ? (blockData as any).cameraTo : undefined;
         const newBlock: AnimationBlock = {
           id: newBlockId,
           kind: "preset",
@@ -1852,8 +1862,8 @@ export const useEditorStore = create<EditorStoreState>()(
           easing: blockData.easing || "ease-in-out",
           customCurve: blockData.customCurve || [0.25, 0.1, 0.25, 1.0],
           cameraTo: isCameraBlock
-            ? blockData.cameraTo || { x: 200, y: 0, z: 300, fov: 0 }
-            : blockData.cameraTo,
+            ? cameraToVal || { x: 200, y: 0, z: 300, fov: 0 }
+            : cameraToVal,
         };
 
         set((state) => ({
@@ -1884,8 +1894,8 @@ export const useEditorStore = create<EditorStoreState>()(
 
                 if (isKeyframeTrack(updated as AnimationBlock)) {
                   const kfTrack = updated as KeyframeTrackBlock;
-                  if (partial.keyframes) {
-                    const sorted = [...partial.keyframes].sort((k1, k2) => k1.frame - k2.frame);
+                  if ("keyframes" in partial && partial.keyframes) {
+                    const sorted = [...(partial.keyframes as Keyframe<number | string>[])].sort((k1, k2) => k1.frame - k2.frame);
                     kfTrack.keyframes = sorted;
                     if (sorted.length > 0) {
                       kfTrack.startFrame = sorted[0].frame;

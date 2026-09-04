@@ -193,7 +193,7 @@ export function sampleCubicBezier(
 
 export function applyEasing(
   t: number,
-  easing: "linear" | "ease-in-out" | "spring" | "custom",
+  easing: KeyframeEasing = "linear",
   customCurve: [number, number, number, number] = [0.25, 0.1, 0.25, 1.0]
 ): number {
   const clampedT = clamp(t, 0, 1);
@@ -362,7 +362,7 @@ export function sampleBlock(
 ): SampledLayerDelta {
   const duration = Math.max(1, block.endFrame - block.startFrame);
   const t = clamp((frame - block.startFrame) / duration, 0, 1);
-  const eased = applyEasing(t, block.easing, block.customCurve);
+  const eased = applyEasing(t, block.easing || "linear", block.customCurve);
 
   const presetId =
     typeof block.preset === "string"
@@ -711,7 +711,7 @@ export function sampleCamera(
 
     if (frame >= block.startFrame && frame <= block.endFrame) {
       const t = clamp((frame - block.startFrame) / duration, 0, 1);
-      const eased = applyEasing(t, block.easing, block.customCurve);
+      const eased = applyEasing(t, block.easing || "linear", block.customCurve);
       currentCamera.x += dx * eased;
       currentCamera.y += dy * eased;
       currentCamera.z += dz * eased;

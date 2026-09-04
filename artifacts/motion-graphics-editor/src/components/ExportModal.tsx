@@ -37,6 +37,7 @@ interface ExportModalProps {
 export function ExportModal({ open, onOpenChange }: ExportModalProps) {
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
+  const projectName = useEditorStore((s) => s.projectName) || "motion_scene";
   const aspectRatio = useEditorStore((s) => s.aspectRatio) || "16:9";
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],

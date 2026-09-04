@@ -47,12 +47,12 @@ export function SaveAnimationPresetModal({
       category: "user",
       createdAt: Date.now(),
       blocks: blocks.map((b) => ({
-        preset: b.preset,
+        preset: ("preset" in b && b.preset ? b.preset : "fade-in") as import("../store/animation-blocks").BlockPreset,
         durationFrames: Math.max(1, b.endFrame - b.startFrame),
         offsetFrames: b.startFrame - minStart,
-        easing: b.easing,
+        easing: b.easing || "ease-in-out",
         customCurve: b.customCurve,
-        cameraTo: b.cameraTo,
+        cameraTo: "cameraTo" in b ? (b as any).cameraTo : undefined,
       })),
     };
 

@@ -14,6 +14,7 @@ import type {
   ColorGradeEffect,
   GhostEffect,
   GlitchEffect,
+  EdgeFadeEffect,
   LayerEffect,
   DropShadowLayerEffect,
   GlowLayerEffect,

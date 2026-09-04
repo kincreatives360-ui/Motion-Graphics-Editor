@@ -169,10 +169,11 @@ function FrameCaptureController({
       },
       readPixels: () => {
         gl.render(scene, camera);
-        const width = gl.drawingBufferWidth;
-        const height = gl.drawingBufferHeight;
+        const glCtx = gl.getContext();
+        const width = gl.domElement.width;
+        const height = gl.domElement.height;
         const buf = new Uint8Array(width * height * 4);
-        gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+        glCtx.readPixels(0, 0, width, height, glCtx.RGBA, glCtx.UNSIGNED_BYTE, buf);
         return buf;
       },
     };

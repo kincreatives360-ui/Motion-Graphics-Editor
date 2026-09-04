@@ -22,6 +22,7 @@ import {
 import { useEditorStore, useEditorUIStore, type Layer } from "../store/editor-store";
 import {
   type AnimationBlock,
+  type PresetAnimationBlock,
   type BlockPreset,
   type AnimatableProperty,
   type Keyframe,
@@ -114,7 +115,7 @@ export function Timeline() {
   const layers = activeScene?.layers || [];
   const animationBlocks = activeScene?.animationBlocks || [];
   const cameraBlocks = animationBlocks.filter(
-    (b) => b.preset === "camera-move" || b.layerId === null,
+    (b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || b.layerId === null),
   );
 
   // Zoom to pxPerFrame mapping: zoom 0 = 2px, zoom 50 = 6px, zoom 100 = 16px
@@ -346,6 +347,8 @@ export function Timeline() {
         return layer.shape?.stroke ?? "#ffffff";
       case "fontSize":
         return layer.text?.fontSize ?? 32;
+      default:
+        return 0;
     }
   };
 
