@@ -339,7 +339,11 @@ export function R3FLayerMesh({
   }, [layer.type, layer.shape, width, height, radius, isEllipse, opacity, dofBlur]);
 
   return (
-    <group position={position} rotation={rotation}>
+    <group
+      position={position}
+      rotation={rotation}
+      scale={[layer.transform.flipX ? -1 : 1, layer.transform.flipY ? -1 : 1, 1]}
+    >
       {/* 1. Backdrop Blur Pass (composited behind layer) */}
       {backdropBlurEffect && (
         <BackdropBlurMesh geo={geoInfo} effect={backdropBlurEffect} />

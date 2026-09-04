@@ -466,6 +466,11 @@ export function drawLayer(
     ctx.rotate((rotation * Math.PI) / 180);
   }
 
+  // Flip horizontal and vertical
+  if (layer.transform.flipX || layer.transform.flipY) {
+    ctx.scale(layer.transform.flipX ? -1 : 1, layer.transform.flipY ? -1 : 1);
+  }
+
   // 3D Perspective Tilt & Swivel Matrix
   if (rotateX !== 0 || rotateY !== 0) {
     const radX = (rotateX * Math.PI) / 180;

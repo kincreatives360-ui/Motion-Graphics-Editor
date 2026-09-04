@@ -6,6 +6,7 @@ import {
   createDefaultLayerEffect,
   type Layer,
 } from "./editor-store";
+import { filterLayersBySearch } from "../components/LayerTree";
 
 describe("Editor Stores Separation", () => {
   beforeEach(() => {
@@ -512,4 +513,628 @@ describe("Editor Stores Separation", () => {
       expect(pastedLayer.effectsOrder).toEqual([pastedLayer.effects[0].id]);
     });
   });
+
+  describe("Scene Filmstrip & Multi-Scene Management", () => {
+    it("updates scene properties such as durationFrames and name", () => {
+      const store = useEditorStore.getState();
+      store.updateScene("scene-1", { durationFrames: 240, name: "Intro Sequence" });
+      const updated = useEditorStore.getState().scenes.find((s) => s.id === "scene-1")!;
+      expect(updated.durationFrames).toBe(240);
+      expect(updated.name).toBe("Intro Sequence");
+    });
+
+    it("reorders scenes properly", () => {
+      const store = useEditorStore.getState();
+      const scene2Id = store.addScene({ name: "Scene 2" });
+      const scene3Id = store.addScene({ name: "Scene 3" });
+
+      expect(useEditorStore.getState().scenes.map((s) => s.id)).toEqual([
+        "scene-1",
+        scene2Id,
+        scene3Id,
+      ]);
+
+      // Move scene-1 to index 2
+      store.reorderScenes(0, 2);
+      expect(useEditorStore.getState().scenes.map((s) => s.id)).toEqual([
+        scene2Id,
+        scene3Id,
+        "scene-1",
+      ]);
+    });
+
+    it("duplicates scene with cloned contents and new ID", () => {
+      const store = useEditorStore.getState();
+      store.addLayer("scene-1", { name: "Card Layer", type: "shape" });
+      const copyId = store.duplicateScene("scene-1");
+
+      expect(copyId).toBeTruthy();
+      expect(copyId).not.toBe("scene-1");
+      const scenes = useEditorStore.getState().scenes;
+      expect(scenes.length).toBe(2);
+      const copyScene = scenes.find((s) => s.id === copyId)!;
+      expect(copyScene.name).toContain("(Copy)");
+      expect(copyScene.layers.length).toBe(1);
+      expect(useEditorStore.getState().activeSceneId).toBe(copyId);
+    });
+
+    it("deletes scene and falls back to remaining active scene, never deleting the last scene", () => {
+      const store = useEditorStore.getState();
+      const scene2Id = store.addScene({ name: "Scene 2" });
+      expect(useEditorStore.getState().scenes.length).toBe(2);
+
+      // Active is scene2Id; delete it
+      store.deleteScene(scene2Id);
+      expect(useEditorStore.getState().scenes.length).toBe(1);
+      expect(useEditorStore.getState().activeSceneId).toBe("scene-1");
+
+      // Cannot delete the only remaining scene
+      store.deleteScene("scene-1");
+      expect(useEditorStore.getState().scenes.length).toBe(1);
+      expect(useEditorStore.getState().activeSceneId).toBe("scene-1");
+    });
+  });
+
+  describe("Alignment, Flip, Restack, and Ungroup (Phase 2)", () => {
+    beforeEach(() => {
+      useEditorStore.setState((state) => ({
+        ...state,
+        selectedLayerIds: [],
+        scenes: state.scenes.map((s) => ({ ...s, layers: [] })),
+      }));
+    });
+
+    it("aligns a single layer to canvas bounds (16:9 = 1920x1080)", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", {
+        name: "Box",
+        type: "shape",
+        transform: { x: 500, y: 300, width: 200, height: 100, rotation: 0, opacity: 1 },
+      });
+      store.selectLayers([layerId]);
+
+      // Align Left -> x should be 0
+      store.alignLeft();
+      let layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.x).toBe(0);
+
+      // Align Right -> x + width should be 1920 => x = 1720
+      store.alignRight();
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.x).toBe(1720);
+
+      // Align Top -> y should be 0
+      store.alignTop();
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.y).toBe(0);
+
+      // Align Bottom -> y + height should be 1080 => y = 980
+      store.alignBottom();
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.y).toBe(980);
+
+      // Align Center Horizontal -> center X = 960 => x = 960 - 100 = 860
+      store.alignCenterHorizontal();
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.x).toBe(860);
+
+      // Align Center Vertical -> center Y = 540 => y = 540 - 50 = 490
+      store.alignCenterVertical();
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.y).toBe(490);
+    });
+
+    it("aligns multiple selected layers to collective bounding box", () => {
+      const store = useEditorStore.getState();
+      const l1Id = store.addLayer("scene-1", {
+        name: "L1",
+        type: "shape",
+        transform: { x: 100, y: 200, width: 100, height: 100, rotation: 0, opacity: 1 },
+      });
+      const l2Id = store.addLayer("scene-1", {
+        name: "L2",
+        type: "shape",
+        transform: { x: 300, y: 400, width: 100, height: 100, rotation: 0, opacity: 1 },
+      });
+      store.selectLayers([l1Id, l2Id]);
+
+      // Align Left: bounding minX is 100 -> both layers x should become 100
+      store.alignLeft();
+      let scene = useEditorStore.getState().scenes[0];
+      expect(scene.layers.find((l) => l.id === l1Id)!.transform.x).toBe(100);
+      expect(scene.layers.find((l) => l.id === l2Id)!.transform.x).toBe(100);
+
+      // Align Bottom: bounding maxY is 500 (from L2 y:400 + 100) -> both layers maxY should be 500
+      store.alignBottom();
+      scene = useEditorStore.getState().scenes[0];
+      expect(scene.layers.find((l) => l.id === l1Id)!.transform.y).toBe(400);
+      expect(scene.layers.find((l) => l.id === l2Id)!.transform.y).toBe(400);
+    });
+
+    it("flips single layer horizontally and vertically", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", {
+        name: "Card",
+        type: "shape",
+        transform: { x: 100, y: 100, width: 200, height: 200, rotation: 0, opacity: 1 },
+      });
+      store.selectLayers([layerId]);
+
+      store.flipHorizontal();
+      let layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.flipX).toBe(true);
+
+      store.flipHorizontal();
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.flipX).toBe(false);
+
+      store.flipVertical();
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.flipY).toBe(true);
+    });
+
+    it("flips multiple layers mirroring around collective center", () => {
+      const store = useEditorStore.getState();
+      // L1 center is at (150, 150), L2 center is at (350, 150). Collective center X = 250.
+      const l1Id = store.addLayer("scene-1", {
+        name: "L1",
+        type: "shape",
+        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0, opacity: 1 },
+      });
+      const l2Id = store.addLayer("scene-1", {
+        name: "L2",
+        type: "shape",
+        transform: { x: 300, y: 100, width: 100, height: 100, rotation: 0, opacity: 1 },
+      });
+      store.selectLayers([l1Id, l2Id]);
+
+      store.flipHorizontal();
+      const scene = useEditorStore.getState().scenes[0];
+      const l1 = scene.layers.find((l) => l.id === l1Id)!;
+      const l2 = scene.layers.find((l) => l.id === l2Id)!;
+
+      expect(l1.transform.flipX).toBe(true);
+      expect(l2.transform.flipX).toBe(true);
+      // L1 was mirrored across 250: new center is 250 + (250 - 150) = 350 => x = 300
+      expect(l1.transform.x).toBe(300);
+      // L2 was mirrored across 250: new center is 250 - (350 - 250) = 150 => x = 100
+      expect(l2.transform.x).toBe(100);
+    });
+
+    it("restacks layers forward, backward, to front, and to back preserving sibling hierarchy", () => {
+      const store = useEditorStore.getState();
+      const l1 = store.addLayer("scene-1", { name: "L1", type: "shape" });
+      const l2 = store.addLayer("scene-1", { name: "L2", type: "shape" });
+      const l3 = store.addLayer("scene-1", { name: "L3", type: "shape" });
+
+      const getOrder = () =>
+        useEditorStore.getState().scenes[0].layers.map((l) => l.id);
+
+      expect(getOrder()).toEqual([l1, l2, l3]);
+
+      // Bring L1 forward -> swaps with L2
+      store.selectLayers([l1]);
+      store.bringLayerForward();
+      expect(getOrder()).toEqual([l2, l1, l3]);
+
+      // Bring L2 to front -> moves to highest index (end)
+      store.selectLayers([l2]);
+      store.bringLayerToFront();
+      expect(getOrder()).toEqual([l1, l3, l2]);
+
+      // Send L2 backward -> swaps with L3
+      store.selectLayers([l2]);
+      store.sendLayerBackward();
+      expect(getOrder()).toEqual([l1, l2, l3]);
+
+      // Send L3 to back -> moves to index 0
+      store.selectLayers([l3]);
+      store.sendLayerToBack();
+      expect(getOrder()).toEqual([l3, l1, l2]);
+    });
+
+    it("ungroups selected group and composes transforms into children", () => {
+      const store = useEditorStore.getState();
+      const l1 = store.addLayer("scene-1", {
+        name: "Child 1",
+        type: "shape",
+        opacity: 0.8,
+        transform: { x: 50, y: 50, width: 100, height: 100, rotation: 10 },
+      });
+      const l2 = store.addLayer("scene-1", {
+        name: "Child 2",
+        type: "shape",
+        opacity: 1,
+        transform: { x: 200, y: 50, width: 100, height: 100, rotation: 0 },
+      });
+
+      store.selectLayers([l1, l2]);
+      const groupId = store.groupSelectedLayers();
+      expect(groupId).toBeTruthy();
+
+      // Modify group transform and opacity
+      store.updateLayer(groupId!, {
+        opacity: 0.5,
+        transform: {
+          x: 100,
+          y: 200,
+          width: 300,
+          height: 150,
+          rotation: 30,
+          depth: 25,
+        },
+      });
+
+      // Select group and ungroup
+      store.selectLayers([groupId!]);
+      store.ungroupSelectedLayers();
+
+      const scene = useEditorStore.getState().scenes[0];
+      // Group container should be gone
+      expect(scene.layers.some((l) => l.id === groupId)).toBe(false);
+
+      // Children should have parentId = null
+      const child1 = scene.layers.find((l) => l.id === l1)!;
+      const child2 = scene.layers.find((l) => l.id === l2)!;
+      expect(child1).toBeTruthy();
+      expect(child2).toBeTruthy();
+      expect(child1.parentId).toBeNull();
+      expect(child2.parentId).toBeNull();
+
+      // Transform composed: rotation = 10 + 30 = 40, opacity = 0.8 * 0.5 = 0.4, depth composed
+      expect(child1.transform.rotation).toBeCloseTo(40, 1);
+      expect(child1.opacity).toBeCloseTo(0.4, 2);
+      expect(child1.transform.depth).toBe(25);
+
+      // Children should now be selected
+      expect(useEditorStore.getState().selectedLayerIds).toEqual([l1, l2]);
+    });
+  });
+
+  describe("Animate Mode and Keyframe Recording", () => {
+    it("manages animateMode flag in UI store without affecting document history", () => {
+      const uiStore = useEditorUIStore.getState();
+      expect(uiStore.animateMode).toBe(false);
+
+      uiStore.toggleAnimateMode();
+      expect(useEditorUIStore.getState().animateMode).toBe(true);
+
+      uiStore.setAnimateMode(false);
+      expect(useEditorUIStore.getState().animateMode).toBe(false);
+
+      // UI store changes should not pollute document temporal history
+      expect(useEditorStore.temporal.getState().pastStates.length).toBe(0);
+    });
+
+    it("records new keyframe track with baseline and target keyframes when no track exists", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", {
+        name: "Animated Box",
+        type: "shape",
+        opacity: 0.8,
+        transform: { x: 100, y: 150, width: 200, height: 200, rotation: 0 },
+      });
+
+      // Initially no animation blocks
+      expect(useEditorStore.getState().scenes[0].animationBlocks.length).toBe(0);
+
+      // Record x keyframe at frame 40 with value 300
+      useEditorStore.getState().recordKeyframe(layerId, "x", 300, 40, "scene-1");
+
+      const blocks = useEditorStore.getState().scenes[0].animationBlocks;
+      expect(blocks.length).toBe(1);
+      const track = blocks[0];
+      expect(track.layerId).toBe(layerId);
+      expect(track.property).toBe("x");
+      expect(track.keyframes.length).toBe(2);
+
+      // Baseline keyframe at targetFrame - 30 = 10 with initial layer value 100
+      expect(track.keyframes[0].frame).toBe(10);
+      expect(track.keyframes[0].value).toBe(100);
+
+      // Target keyframe at frame 40 with value 300
+      expect(track.keyframes[1].frame).toBe(40);
+      expect(track.keyframes[1].value).toBe(300);
+    });
+
+    it("updates existing keyframe when recording at the exact same frame", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", {
+        name: "Box",
+        type: "shape",
+        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0 },
+      });
+
+      store.recordKeyframe(layerId, "y", 200, 30, "scene-1");
+      let blocks = useEditorStore.getState().scenes[0].animationBlocks;
+      expect(blocks[0].keyframes.find((k) => k.frame === 30)?.value).toBe(200);
+
+      // Update at frame 30 with new value 450
+      useEditorStore.getState().recordKeyframe(layerId, "y", 450, 30, "scene-1");
+      blocks = useEditorStore.getState().scenes[0].animationBlocks;
+      expect(blocks.length).toBe(1);
+      const kf30 = blocks[0].keyframes.find((k) => k.frame === 30);
+      expect(kf30?.value).toBe(450);
+      // Keyframe count should still be 2 (baseline + frame 30)
+      expect(blocks[0].keyframes.length).toBe(2);
+    });
+
+    it("appends and maintains sorted order when recording keyframe at a new frame on existing track", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", {
+        name: "Box",
+        type: "shape",
+        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0 },
+      });
+
+      // Create initial track at frame 60
+      store.recordKeyframe(layerId, "rotation", 45, 60, "scene-1");
+      // Add keyframe at frame 90
+      useEditorStore.getState().recordKeyframe(layerId, "rotation", 90, 90, "scene-1");
+      // Add keyframe at frame 45 (between baseline 30 and 60)
+      useEditorStore.getState().recordKeyframe(layerId, "rotation", 30, 45, "scene-1");
+
+      const track = useEditorStore.getState().scenes[0].animationBlocks[0];
+      expect(track.keyframes.length).toBe(4);
+      const frames = track.keyframes.map((k) => k.frame);
+      expect(frames).toEqual([30, 45, 60, 90]);
+    });
+
+    it("records keyframes during nudgeSelectedLayers when animateMode is enabled", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", {
+        name: "Nudge Box",
+        type: "shape",
+        transform: { x: 50, y: 50, width: 100, height: 100, rotation: 0 },
+      });
+      store.selectLayers([layerId]);
+
+      // When animateMode is false: nudge does not record keyframes
+      useEditorUIStore.getState().setAnimateMode(false);
+      useEditorUIStore.getState().setCurrentFrame(30);
+      store.nudgeSelectedLayers(10, 20);
+
+      expect(useEditorStore.getState().scenes[0].animationBlocks.length).toBe(0);
+      let layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.x).toBe(60);
+      expect(layer.transform.y).toBe(70);
+
+      // When animateMode is true: nudge records x and y keyframes
+      useEditorUIStore.getState().setAnimateMode(true);
+      useEditorUIStore.getState().setCurrentFrame(50);
+      useEditorStore.getState().nudgeSelectedLayers(15, -10);
+
+      layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
+      expect(layer.transform.x).toBe(75);
+      expect(layer.transform.y).toBe(60);
+
+      const blocks = useEditorStore.getState().scenes[0].animationBlocks;
+      expect(blocks.length).toBe(2);
+      const xTrack = blocks.find((b) => b.property === "x");
+      const yTrack = blocks.find((b) => b.property === "y");
+      expect(xTrack).toBeDefined();
+      expect(yTrack).toBeDefined();
+      expect(xTrack?.keyframes.find((k) => k.frame === 50)?.value).toBe(75);
+      expect(yTrack?.keyframes.find((k) => k.frame === 50)?.value).toBe(60);
+    });
+  });
+
+  describe("Keyboard Shortcuts and Timeline Editing Actions", () => {
+    it("toggles visibility of selected layers", () => {
+      const store = useEditorStore.getState();
+      const l1 = store.addLayer("scene-1", { name: "L1", visible: true });
+      const l2 = store.addLayer("scene-1", { name: "L2", visible: true });
+
+      store.selectLayers([l1, l2]);
+      // If visible, toggleSelectedLayersVisibility sets both to false
+      store.toggleSelectedLayersVisibility();
+
+      let scene = useEditorStore.getState().scenes[0];
+      expect(scene.layers.find((l) => l.id === l1)?.visible).toBe(false);
+      expect(scene.layers.find((l) => l.id === l2)?.visible).toBe(false);
+
+      // Toggle again sets both back to true
+      store.toggleSelectedLayersVisibility();
+      scene = useEditorStore.getState().scenes[0];
+      expect(scene.layers.find((l) => l.id === l1)?.visible).toBe(true);
+      expect(scene.layers.find((l) => l.id === l2)?.visible).toBe(true);
+    });
+
+    it("sets opacity on selected layers and records keyframe if animateMode is true", () => {
+      const store = useEditorStore.getState();
+      const l1 = store.addLayer("scene-1", { name: "L1", opacity: 1 });
+      store.selectLayers([l1]);
+
+      useEditorUIStore.getState().setAnimateMode(false);
+      store.setSelectedLayersOpacity(0.4);
+
+      let scene = useEditorStore.getState().scenes[0];
+      expect(scene.layers.find((l) => l.id === l1)?.opacity).toBe(0.4);
+      expect(scene.animationBlocks.length).toBe(0);
+
+      // Now with animateMode = true
+      useEditorUIStore.getState().setAnimateMode(true);
+      useEditorUIStore.getState().setCurrentFrame(45);
+      store.setSelectedLayersOpacity(0.8);
+
+      scene = useEditorStore.getState().scenes[0];
+      expect(scene.layers.find((l) => l.id === l1)?.opacity).toBe(0.8);
+      expect(scene.animationBlocks.length).toBe(1);
+      const opTrack = scene.animationBlocks[0];
+      expect(opTrack.property).toBe("opacity");
+      expect(opTrack.keyframes.find((k) => k.frame === 45)?.value).toBe(0.8);
+    });
+
+    it("splits animation block at playhead into two continuous blocks", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", { name: "Block Layer" });
+      store.selectLayers([layerId]);
+
+      // Add a preset animation block spanning frames 10 to 70
+      store.addAnimationBlock("scene-1", {
+        layerId,
+        preset: "fade-in",
+        startFrame: 10,
+        endFrame: 70,
+        easing: "ease-in-out",
+      });
+
+      expect(useEditorStore.getState().scenes[0].animationBlocks.length).toBe(1);
+
+      // Split at frame 40
+      store.splitBlocksAtPlayhead(40, "scene-1");
+
+      const blocks = useEditorStore.getState().scenes[0].animationBlocks;
+      expect(blocks.length).toBe(2);
+      expect(blocks[0].startFrame).toBe(10);
+      expect(blocks[0].endFrame).toBe(40);
+      expect(blocks[1].startFrame).toBe(40);
+      expect(blocks[1].endFrame).toBe(70);
+    });
+
+    it("trims in-point and out-point of animation blocks at playhead", () => {
+      const store = useEditorStore.getState();
+      const layerId = store.addLayer("scene-1", { name: "Trim Layer" });
+      store.selectLayers([layerId]);
+
+      store.addAnimationBlock("scene-1", {
+        layerId,
+        preset: "fade-in",
+        startFrame: 10,
+        endFrame: 80,
+        easing: "ease-in-out",
+      });
+
+      // Trim In at frame 30 -> startFrame becomes 30
+      store.trimInPointAtPlayhead(30, "scene-1");
+      let block = useEditorStore.getState().scenes[0].animationBlocks[0];
+      expect(block.startFrame).toBe(30);
+      expect(block.endFrame).toBe(80);
+
+      // Trim Out at frame 65 -> endFrame becomes 65
+      store.trimOutPointAtPlayhead(65, "scene-1");
+      block = useEditorStore.getState().scenes[0].animationBlocks[0];
+      expect(block.startFrame).toBe(30);
+      expect(block.endFrame).toBe(65);
+    });
+
+    it("manages timelineZoom state in UI store within [0, 100]", () => {
+      const ui = useEditorUIStore.getState();
+      expect(ui.timelineZoom).toBe(54);
+
+      ui.setTimelineZoom(80);
+      expect(useEditorUIStore.getState().timelineZoom).toBe(80);
+
+      // Clamp max 100
+      ui.setTimelineZoom(150);
+      expect(useEditorUIStore.getState().timelineZoom).toBe(100);
+
+      // Clamp min 0
+      ui.setTimelineZoom(-20);
+      expect(useEditorUIStore.getState().timelineZoom).toBe(0);
+    });
+
+    it("manages helpOpen state in UI store", () => {
+      const ui = useEditorUIStore.getState();
+      expect(ui.helpOpen).toBe(false);
+
+      ui.setHelpOpen(true);
+      expect(useEditorUIStore.getState().helpOpen).toBe(true);
+
+      ui.setHelpOpen(false);
+      expect(useEditorUIStore.getState().helpOpen).toBe(false);
+    });
+
+    it("manages isLightSelected state in UI store and coordinates with camera and layers", () => {
+      const ui = useEditorUIStore.getState();
+      const store = useEditorStore.getState();
+
+      expect(ui.isLightSelected).toBe(false);
+
+      // Select camera first
+      ui.setIsCameraSelected(true);
+      expect(useEditorUIStore.getState().isCameraSelected).toBe(true);
+
+      // Select light -> camera should be deselected
+      ui.setIsLightSelected(true);
+      expect(useEditorUIStore.getState().isLightSelected).toBe(true);
+      expect(useEditorUIStore.getState().isCameraSelected).toBe(false);
+
+      // Select camera again -> light should be deselected
+      ui.setIsCameraSelected(true);
+      expect(useEditorUIStore.getState().isCameraSelected).toBe(true);
+      expect(useEditorUIStore.getState().isLightSelected).toBe(false);
+
+      // Select light again, then select layers -> light should be deselected
+      ui.setIsLightSelected(true);
+      expect(useEditorUIStore.getState().isLightSelected).toBe(true);
+      store.selectLayers(["layer-1"]);
+      expect(useEditorUIStore.getState().isLightSelected).toBe(false);
+    });
+
+    it("detects device mockup on layers for conditional Light track rendering", () => {
+      const plainLayers: Layer[] = [
+        { id: "l1", name: "Text 1", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 100, height: 50, rotation: 0 } },
+        { id: "l2", name: "Shape 1", type: "shape", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0 } },
+      ];
+      expect(plainLayers.some((l) => Boolean(l.mockup && l.mockup !== "none"))).toBe(false);
+
+      const mockupLayers: Layer[] = [
+        ...plainLayers,
+        { id: "l3", name: "Phone Mockup", type: "image", opacity: 1, visible: true, locked: false, mockup: "iphone", transform: { x: 0, y: 0, width: 400, height: 800, rotation: 0 } },
+      ];
+      expect(mockupLayers.some((l) => Boolean(l.mockup && l.mockup !== "none"))).toBe(true);
+
+      const noneMockupLayers: Layer[] = [
+        ...plainLayers,
+        { id: "l4", name: "None Mockup", type: "image", opacity: 1, visible: true, locked: false, mockup: "none", transform: { x: 0, y: 0, width: 400, height: 800, rotation: 0 } },
+      ];
+      expect(noneMockupLayers.some((l) => Boolean(l.mockup && l.mockup !== "none"))).toBe(false);
+    });
+
+    it("filters layers by search query while preserving ancestor groups and hierarchy", () => {
+      const groupA: Layer = { id: "g-a", name: "Hero Section", type: "group", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 200, height: 200, rotation: 0 } };
+      const childA1: Layer = { id: "c-a1", parentId: "g-a", name: "Headline Text", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 10, width: 100, height: 30, rotation: 0 } };
+      const childA2: Layer = { id: "c-a2", parentId: "g-a", name: "Accent Badge", type: "shape", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 50, width: 40, height: 20, rotation: 0 } };
+      const groupB: Layer = { id: "g-b", name: "Footer Group", type: "group", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 400, width: 200, height: 100, rotation: 0 } };
+      const childB1: Layer = { id: "c-b1", parentId: "g-b", name: "Copyright Text", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 10, width: 80, height: 20, rotation: 0 } };
+
+      const allLayers = [groupA, childA1, childA2, groupB, childB1];
+
+      // Empty search returns all layers
+      expect(filterLayersBySearch(allLayers, "")).toEqual(allLayers);
+      expect(filterLayersBySearch(allLayers, "   ")).toEqual(allLayers);
+
+      // Search matching childA1 ("headline"):
+      // Must include childA1 AND its ancestor groupA so hierarchy remains legible
+      const resultHeadline = filterLayersBySearch(allLayers, "headline");
+      const resultHeadlineIds = resultHeadline.map((l) => l.id);
+      expect(resultHeadlineIds).toContain("c-a1");
+      expect(resultHeadlineIds).toContain("g-a");
+      // Does not contain unrelated siblings or other groups
+      expect(resultHeadlineIds).not.toContain("c-a2");
+      expect(resultHeadlineIds).not.toContain("g-b");
+      expect(resultHeadlineIds).not.toContain("c-b1");
+
+      // Search matching a group ("footer"):
+      // Includes groupB AND its children
+      const resultFooter = filterLayersBySearch(allLayers, "footer");
+      const resultFooterIds = resultFooter.map((l) => l.id);
+      expect(resultFooterIds).toContain("g-b");
+      expect(resultFooterIds).toContain("c-b1");
+      expect(resultFooterIds).not.toContain("g-a");
+
+      // Search matching both text layers ("text"):
+      // Includes childA1 (and parent groupA) and childB1 (and parent groupB)
+      const resultText = filterLayersBySearch(allLayers, "TEXT");
+      const resultTextIds = resultText.map((l) => l.id);
+      expect(resultTextIds).toEqual(expect.arrayContaining(["g-a", "c-a1", "g-b", "c-b1"]));
+      expect(resultTextIds).not.toContain("c-a2");
+
+      // Search matching nothing:
+      expect(filterLayersBySearch(allLayers, "nonexistent-xyz")).toEqual([]);
+    });
+  });
 });
+
+

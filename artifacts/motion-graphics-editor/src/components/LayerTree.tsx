@@ -17,6 +17,12 @@ import {
   Copy,
   FolderPlus,
   Trash2,
+  Ungroup,
+  ArrowUp,
+  ArrowDown,
+  ChevronsUp,
+  ChevronsDown,
+  Search,
 } from "lucide-react";
 import { useEditorStore } from "../store/editor-store";
 import type { Layer } from "../store/editor-store";
@@ -92,7 +98,61 @@ function isDescendant(layers: Layer[], potentialParentId: string, layerId: strin
   return false;
 }
 
-export function LayerTree() {
+export function filterLayersBySearch(layers: Layer[], query: string): Layer[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return layers;
+
+  const layerMap = new Map(layers.map((l) => [l.id, l]));
+  const matchedIds = new Set<string>();
+
+  for (const layer of layers) {
+    if (layer.name.toLowerCase().includes(q)) {
+      matchedIds.add(layer.id);
+    }
+  }
+
+  const visibleIds = new Set<string>(matchedIds);
+
+  // Preserve ancestor groups for each match so the hierarchy remains legible
+  for (const id of matchedIds) {
+    let current = layerMap.get(id);
+    const visited = new Set<string>();
+    while (current && current.parentId) {
+      if (visited.has(current.parentId)) break;
+      visited.add(current.parentId);
+      visibleIds.add(current.parentId);
+      current = layerMap.get(current.parentId);
+    }
+  }
+
+  // If a group itself matches, also include all its descendants
+  for (const id of matchedIds) {
+    const layer = layerMap.get(id);
+    if (layer?.type === "group") {
+      for (const candidate of layers) {
+        let curr = candidate;
+        const visited = new Set<string>();
+        while (curr && curr.parentId) {
+          if (visited.has(curr.parentId)) break;
+          visited.add(curr.parentId);
+          if (curr.parentId === id) {
+            visibleIds.add(candidate.id);
+            break;
+          }
+          curr = layerMap.get(curr.parentId)!;
+        }
+      }
+    }
+  }
+
+  return layers.filter((l) => visibleIds.has(l.id));
+}
+
+export interface LayerTreeProps {
+  searchQuery?: string;
+}
+
+export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
   const scenes = useEditorStore((state) => state.scenes);
   const activeSceneId = useEditorStore((state) => state.activeSceneId);
   const selectedLayerIds = useEditorStore((state) => state.selectedLayerIds);
@@ -103,6 +163,11 @@ export function LayerTree() {
   const reparentLayer = useEditorStore((state) => state.reparentLayer);
   const reorderLayers = useEditorStore((state) => state.reorderLayers);
   const groupSelectedLayers = useEditorStore((state) => state.groupSelectedLayers);
+  const ungroupSelectedLayers = useEditorStore((state) => state.ungroupSelectedLayers);
+  const bringLayerForward = useEditorStore((state) => state.bringLayerForward);
+  const sendLayerBackward = useEditorStore((state) => state.sendLayerBackward);
+  const bringLayerToFront = useEditorStore((state) => state.bringLayerToFront);
+  const sendLayerToBack = useEditorStore((state) => state.sendLayerToBack);
   const duplicateSelectedLayers = useEditorStore((state) => state.duplicateSelectedLayers);
   const removeLayers = useEditorStore((state) => state.removeLayers);
 
@@ -113,7 +178,24 @@ export function LayerTree() {
 
   const layers = activeScene?.layers || [];
   const animationBlocks = activeScene?.animationBlocks || [];
-  const flattenedList = useMemo(() => getFlattenedTree(layers), [layers]);
+  const filteredLayers = useMemo(
+    () => filterLayersBySearch(layers, searchQuery),
+    [layers, searchQuery],
+  );
+  const flattenedList = useMemo(() => getFlattenedTree(filteredLayers), [filteredLayers]);
+
+  const listContainerRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll current selection into view when selection or search query changes
+  useEffect(() => {
+    if (selectedLayerIds.length > 0) {
+      const targetId = selectedLayerIds[0];
+      const el = document.getElementById(`layer-row-${targetId}`);
+      if (el) {
+        el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    }
+  }, [selectedLayerIds, searchQuery]);
 
   const [lastClickedId, setLastClickedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -128,6 +210,11 @@ export function LayerTree() {
   const selectedLayers = useMemo(
     () => layers.filter((l) => selectedLayerIds.includes(l.id)),
     [layers, selectedLayerIds],
+  );
+
+  const hasGroupSelected = useMemo(
+    () => selectedLayers.some((l) => l.type === "group"),
+    [selectedLayers],
   );
 
   // Animation blocks belonging to selected layers
@@ -334,6 +421,18 @@ export function LayerTree() {
             {selectedLayerIds.length} selected
           </span>
           <div className="flex items-center gap-1">
+            {hasGroupSelected && (
+              <button
+                type="button"
+                data-testid="button-ungroup-selection"
+                title="Ungroup selected (⌘⇧G)"
+                onClick={() => ungroupSelectedLayers()}
+                className="px-1.5 py-0.5 rounded bg-[#202228] hover:bg-[#2a2d36] text-[#cfd3dc] border border-[#2a2d36] flex items-center gap-1 text-[8.5px] font-medium transition-colors"
+              >
+                <Ungroup size={9} strokeWidth={2} />
+                <span>Ungroup</span>
+              </button>
+            )}
             <button
               type="button"
               data-testid="button-save-selection-preset"
@@ -348,23 +447,43 @@ export function LayerTree() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
-        {flattenedList.map(({ layer, depth }, index) => {
-          const isSelected = selectedLayerIds.includes(layer.id);
-          const isEditing = editingId === layer.id;
-          const isDragTarget = dropTarget?.targetLayerId === layer.id;
-          const layerHasAnimations = animationBlocks.some((b) => b.layerId === layer.id);
+      <div ref={listContainerRef} className="flex-1 overflow-y-auto">
+        {flattenedList.length === 0 ? (
+          searchQuery.trim() ? (
+            <div
+              className="p-6 text-center text-[#81838a] text-[10.5px] flex flex-col items-center justify-center gap-2"
+              data-testid="layer-search-empty"
+            >
+              <Search size={16} className="text-[#555a64]" />
+              <span>No layers matching &ldquo;{searchQuery.trim()}&rdquo;</span>
+            </div>
+          ) : (
+            <div
+              className="p-6 text-center text-[#64748b] text-[10px] flex flex-col items-center justify-center gap-1.5"
+              data-testid="layer-tree-empty"
+            >
+              <span>No layers in this scene</span>
+              <span className="text-[9px] text-[#475569]">Click + above or press T / R to add</span>
+            </div>
+          )
+        ) : (
+          flattenedList.map(({ layer, depth }, index) => {
+            const isSelected = selectedLayerIds.includes(layer.id);
+            const isEditing = editingId === layer.id;
+            const isDragTarget = dropTarget?.targetLayerId === layer.id;
+            const layerHasAnimations = animationBlocks.some((b) => b.layerId === layer.id);
 
-          return (
-            <ContextMenu key={layer.id}>
-              <ContextMenuTrigger asChild>
-                <div
-                  className={`layer-tree-row ${isSelected ? "selected" : ""} ${
-                    isDragTarget ? `drop-${dropTarget.position}` : ""
-                  } ${!layer.visible ? "is-hidden" : ""} ${layer.locked ? "is-locked" : ""}`}
-                  style={{ paddingLeft: `${8 + depth * 14}px` }}
-                  data-testid={`layer-row-${layer.id}`}
-                  draggable={!isEditing}
+            return (
+              <ContextMenu key={layer.id}>
+                <ContextMenuTrigger asChild>
+                  <div
+                    id={`layer-row-${layer.id}`}
+                    className={`layer-tree-row ${isSelected ? "selected" : ""} ${
+                      isDragTarget ? `drop-${dropTarget.position}` : ""
+                    } ${!layer.visible ? "is-hidden" : ""} ${layer.locked ? "is-locked" : ""}`}
+                    style={{ paddingLeft: `${8 + depth * 14}px` }}
+                    data-testid={`layer-row-${layer.id}`}
+                    draggable={!isEditing}
                   onClick={(e) => handleRowClick(e, layer, index)}
                   onDoubleClick={(e) => handleDoubleClick(e, layer)}
                   onDragStart={(e) => handleDragStart(e, layer)}
@@ -493,6 +612,70 @@ export function LayerTree() {
                   <span>Group selected</span>
                 </ContextMenuItem>
 
+                {(layer.type === "group" || hasGroupSelected) && (
+                  <ContextMenuItem
+                    className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center justify-between gap-1.5"
+                    onClick={() => ungroupSelectedLayers()}
+                    data-testid="context-menu-ungroup"
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Ungroup size={11} />
+                      <span>Ungroup</span>
+                    </div>
+                    <span className="text-[8.5px] text-[#6c6e75]">⌘⇧G</span>
+                  </ContextMenuItem>
+                )}
+
+                <ContextMenuSeparator className="bg-[#262a34]" />
+
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center justify-between gap-1.5"
+                  onClick={() => bringLayerForward()}
+                  data-testid="context-menu-bring-forward"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <ArrowUp size={11} />
+                    <span>Bring Forward</span>
+                  </div>
+                  <span className="text-[8.5px] text-[#6c6e75]">]</span>
+                </ContextMenuItem>
+
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center justify-between gap-1.5"
+                  onClick={() => sendLayerBackward()}
+                  data-testid="context-menu-send-backward"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <ArrowDown size={11} />
+                    <span>Send Backward</span>
+                  </div>
+                  <span className="text-[8.5px] text-[#6c6e75]">[</span>
+                </ContextMenuItem>
+
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center justify-between gap-1.5"
+                  onClick={() => bringLayerToFront()}
+                  data-testid="context-menu-bring-to-front"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <ChevronsUp size={11} />
+                    <span>Bring to Front</span>
+                  </div>
+                  <span className="text-[8.5px] text-[#6c6e75]">⌘]</span>
+                </ContextMenuItem>
+
+                <ContextMenuItem
+                  className="cursor-pointer hover:bg-[#222631] px-2 py-1 flex items-center justify-between gap-1.5"
+                  onClick={() => sendLayerToBack()}
+                  data-testid="context-menu-send-to-back"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <ChevronsDown size={11} />
+                    <span>Send to Back</span>
+                  </div>
+                  <span className="text-[8.5px] text-[#6c6e75]">⌘[</span>
+                </ContextMenuItem>
+
                 <ContextMenuSeparator className="bg-[#262a34]" />
 
                 <ContextMenuItem
@@ -506,7 +689,7 @@ export function LayerTree() {
               </ContextMenuContent>
             </ContextMenu>
           );
-        })}
+        }))}
       </div>
 
       {/* Save Scene Template Modal */}

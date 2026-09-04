@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   SlidersHorizontal,
   Share2,
@@ -32,6 +32,14 @@ import {
   Ghost,
   Palette,
   Crop,
+  AlignStartHorizontal,
+  AlignCenterHorizontal,
+  AlignEndHorizontal,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  FlipHorizontal,
+  FlipVertical,
 } from "lucide-react";
 import { EffectStackPanel, type EffectTypeOption } from "./effects/EffectStackPanel";
 import { LayerEffectsPanel } from "./effects/LayerEffectsPanel";
@@ -177,9 +185,19 @@ export function Inspector() {
   const reorderSceneEffects = useEditorStore((state) => state.reorderSceneEffects);
   const updateSceneLighting = useEditorStore((state) => state.updateSceneLighting);
   const resetCamera = useEditorStore((state) => state.resetCamera);
+  const alignLeft = useEditorStore((state) => state.alignLeft);
+  const alignCenterHorizontal = useEditorStore((state) => state.alignCenterHorizontal);
+  const alignRight = useEditorStore((state) => state.alignRight);
+  const alignTop = useEditorStore((state) => state.alignTop);
+  const alignCenterVertical = useEditorStore((state) => state.alignCenterVertical);
+  const alignBottom = useEditorStore((state) => state.alignBottom);
+  const flipHorizontal = useEditorStore((state) => state.flipHorizontal);
+  const flipVertical = useEditorStore((state) => state.flipVertical);
+  const recordKeyframe = useEditorStore((state) => state.recordKeyframe);
   const openPresets = useEditorUIStore((state) => state.openPresets);
   const setExportModalOpen = useEditorUIStore((state) => state.setExportModalOpen);
   const setIsCameraSelected = useEditorUIStore((state) => state.setIsCameraSelected);
+  const isLightSelected = useEditorUIStore((state) => state.isLightSelected);
   const setActiveTool = useEditorUIStore((state) => state.setActiveTool);
 
   const [savingBlockPreset, setSavingBlockPreset] = useState<AnimationBlock | null>(null);
@@ -200,6 +218,12 @@ export function Inspector() {
     sessionLayerAccordionSections = val;
     setLayerAccordionSections(val);
   };
+
+  useEffect(() => {
+    if (isLightSelected && !sceneAccordionSections.includes("lighting")) {
+      handleSceneAccordionChange([...sceneAccordionSections, "lighting"]);
+    }
+  }, [isLightSelected]);
 
   const activeScene = scenes.find((s) => s.id === activeSceneId) || scenes[0];
 
@@ -576,12 +600,26 @@ export function Inspector() {
         [key]: clamped,
       },
     });
+
+    if (useEditorUIStore.getState().animateMode) {
+      recordKeyframe(
+        selectedLayer.id,
+        key as AnimatableProperty,
+        clamped,
+        currentFrame,
+        activeScene?.id,
+      );
+    }
   };
 
   const handleOpacityChange = (val: number) => {
     if (!selectedLayer) return;
     const clamped = Math.min(1, Math.max(0, val));
     updateLayer(selectedLayer.id, { opacity: clamped });
+
+    if (useEditorUIStore.getState().animateMode) {
+      recordKeyframe(selectedLayer.id, "opacity", clamped, currentFrame, activeScene?.id);
+    }
   };
 
   // Scrub-to-adjust hooks for Layer Transform fields
@@ -1603,6 +1641,88 @@ export function Inspector() {
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pb-3 pt-0 text-left">
+                      {/* Alignment & Flip Toolbar */}
+                      <div className="flex items-center justify-between gap-1 mb-2.5 pb-2 border-b border-[#202227]">
+                        <div className="flex items-center gap-0.5 bg-[#141518] p-0.5 rounded border border-[#23252a]">
+                          <button
+                            type="button"
+                            onClick={() => alignLeft()}
+                            className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
+                            title="Align Left (⌥A)"
+                            data-testid="btn-align-left"
+                          >
+                            <AlignStartHorizontal size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => alignCenterHorizontal()}
+                            className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
+                            title="Align Center Horizontal (⌥H)"
+                            data-testid="btn-align-center-h"
+                          >
+                            <AlignCenterHorizontal size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => alignRight()}
+                            className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
+                            title="Align Right (⌥D)"
+                            data-testid="btn-align-right"
+                          >
+                            <AlignEndHorizontal size={13} />
+                          </button>
+                          <div className="w-[1px] h-3 bg-[#2a2c30] mx-0.5" />
+                          <button
+                            type="button"
+                            onClick={() => alignTop()}
+                            className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
+                            title="Align Top (⌥W)"
+                            data-testid="btn-align-top"
+                          >
+                            <AlignStartVertical size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => alignCenterVertical()}
+                            className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
+                            title="Align Center Vertical (⌥V)"
+                            data-testid="btn-align-center-v"
+                          >
+                            <AlignCenterVertical size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => alignBottom()}
+                            className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
+                            title="Align Bottom (⌥S)"
+                            data-testid="btn-align-bottom"
+                          >
+                            <AlignEndVertical size={13} />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-0.5 bg-[#141518] p-0.5 rounded border border-[#23252a]">
+                          <button
+                            type="button"
+                            onClick={() => flipHorizontal()}
+                            className={`p-1 rounded transition-colors ${selectedLayer.transform.flipX ? "text-[#38bdf8] bg-[#38bdf8]/15" : "text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227]"}`}
+                            title="Flip Horizontal (⇧H)"
+                            data-testid="btn-flip-horizontal"
+                          >
+                            <FlipHorizontal size={13} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => flipVertical()}
+                            className={`p-1 rounded transition-colors ${selectedLayer.transform.flipY ? "text-[#38bdf8] bg-[#38bdf8]/15" : "text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227]"}`}
+                            title="Flip Vertical (⇧V)"
+                            data-testid="btn-flip-vertical"
+                          >
+                            <FlipVertical size={13} />
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Position (X, Y) */}
                       <div className="grid grid-cols-2 gap-2 mb-2">
                         <div className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]">

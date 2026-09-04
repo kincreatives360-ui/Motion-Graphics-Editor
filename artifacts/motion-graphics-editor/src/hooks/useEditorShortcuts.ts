@@ -117,11 +117,85 @@ export function useEditorShortcuts() {
         return;
       }
 
-      // Group Selection (Cmd/Ctrl + G)
+      // Group (Cmd/Ctrl + G) vs Ungroup (Cmd/Ctrl + Shift + G)
       if (isCmdOrCtrl && (key === "g" || key === "G")) {
         e.preventDefault();
-        store.groupSelectedLayers();
+        if (e.shiftKey) {
+          store.ungroupSelectedLayers();
+        } else {
+          store.groupSelectedLayers();
+        }
         return;
+      }
+
+      // Restack: Bring Forward (]), Send Backward ([), Bring to Front (Cmd/Ctrl + ]), Send to Back (Cmd/Ctrl + [)
+      if (key === "]" || key === "}") {
+        e.preventDefault();
+        if (isCmdOrCtrl) {
+          store.bringLayerToFront();
+        } else {
+          store.bringLayerForward();
+        }
+        return;
+      }
+      if (key === "[" || key === "{") {
+        e.preventDefault();
+        if (isCmdOrCtrl) {
+          store.sendLayerToBack();
+        } else {
+          store.sendLayerBackward();
+        }
+        return;
+      }
+
+      // Align: Alt/Option + A (Left), D (Right), W (Top), S (Bottom), H (Center H), V (Center V)
+      if (e.altKey && !isCmdOrCtrl) {
+        const lowerKey = key.toLowerCase();
+        const isCode = (codeName: string) => e.code === codeName;
+        if (lowerKey === "a" || isCode("KeyA")) {
+          e.preventDefault();
+          store.alignLeft();
+          return;
+        }
+        if (lowerKey === "d" || isCode("KeyD")) {
+          e.preventDefault();
+          store.alignRight();
+          return;
+        }
+        if (lowerKey === "w" || isCode("KeyW")) {
+          e.preventDefault();
+          store.alignTop();
+          return;
+        }
+        if (lowerKey === "s" || isCode("KeyS")) {
+          e.preventDefault();
+          store.alignBottom();
+          return;
+        }
+        if (lowerKey === "h" || isCode("KeyH")) {
+          e.preventDefault();
+          store.alignCenterHorizontal();
+          return;
+        }
+        if (lowerKey === "v" || isCode("KeyV")) {
+          e.preventDefault();
+          store.alignCenterVertical();
+          return;
+        }
+      }
+
+      // Flip: Shift + H (Horizontal), Shift + V (Vertical)
+      if (e.shiftKey && !isCmdOrCtrl && !e.altKey) {
+        if (key === "H" || e.code === "KeyH") {
+          e.preventDefault();
+          store.flipHorizontal();
+          return;
+        }
+        if (key === "V" || e.code === "KeyV") {
+          e.preventDefault();
+          store.flipVertical();
+          return;
+        }
       }
 
       // Duplicate (Cmd/Ctrl + D)
@@ -181,6 +255,62 @@ export function useEditorShortcuts() {
         return;
       }
 
+      // Global Deselect (Escape)
+      if (key === "Escape") {
+        const ui = useEditorUIStore.getState();
+        if (selectedLayerIds.length > 0 || ui.isCameraSelected) {
+          e.preventDefault();
+          store.selectLayers([]);
+          ui.setIsCameraSelected(false);
+          return;
+        }
+      }
+
+      // Select All in Scene (Cmd/Ctrl + A)
+      if (isCmdOrCtrl && !e.shiftKey && !e.altKey && (key === "a" || key === "A" || e.code === "KeyA")) {
+        e.preventDefault();
+        if (currentScene) {
+          const topLevelIds = currentScene.layers
+            .filter((l) => !l.parentId)
+            .map((l) => l.id);
+          store.selectLayers(topLevelIds);
+        }
+        return;
+      }
+
+      // Hide / Show Selected Layers (Cmd/Ctrl + Shift + H)
+      if (isCmdOrCtrl && e.shiftKey && !e.altKey && (key === "h" || key === "H" || e.code === "KeyH")) {
+        e.preventDefault();
+        store.toggleSelectedLayersVisibility();
+        return;
+      }
+
+      // Split at Playhead (Cmd/Ctrl + B)
+      if (isCmdOrCtrl && !e.shiftKey && !e.altKey && (key === "b" || key === "B" || e.code === "KeyB")) {
+        e.preventDefault();
+        store.splitBlocksAtPlayhead();
+        return;
+      }
+
+      // Timeline Zoom In / Out (Cmd/Ctrl + '+', Cmd/Ctrl + '-')
+      if (isCmdOrCtrl && (key === "+" || key === "=")) {
+        e.preventDefault();
+        useEditorUIStore.getState().setTimelineZoom((z) => Math.min(100, z + 10));
+        return;
+      }
+      if (isCmdOrCtrl && (key === "-" || key === "_")) {
+        e.preventDefault();
+        useEditorUIStore.getState().setTimelineZoom((z) => Math.max(0, z - 10));
+        return;
+      }
+
+      // Fit Timeline to View (Shift + Z)
+      if (e.shiftKey && !isCmdOrCtrl && !e.altKey && (key === "Z" || e.code === "KeyZ")) {
+        e.preventDefault();
+        useEditorUIStore.getState().setTimelineZoom(50);
+        return;
+      }
+
       // Nudge with Arrow keys
       if (
         key === "ArrowUp" ||
@@ -188,23 +318,94 @@ export function useEditorShortcuts() {
         key === "ArrowLeft" ||
         key === "ArrowRight"
       ) {
-        if (selectedLayerIds.length === 0) return;
-        e.preventDefault();
-        const step = e.shiftKey ? 10 : 1;
-        let dx = 0;
-        let dy = 0;
-        if (key === "ArrowUp") dy = -step;
-        if (key === "ArrowDown") dy = step;
-        if (key === "ArrowLeft") dx = -step;
-        if (key === "ArrowRight") dx = step;
+        if (selectedLayerIds.length > 0) {
+          e.preventDefault();
+          const step = e.shiftKey ? 10 : 1;
+          let dx = 0;
+          let dy = 0;
+          if (key === "ArrowUp") dy = -step;
+          if (key === "ArrowDown") dy = step;
+          if (key === "ArrowLeft") dx = -step;
+          if (key === "ArrowRight") dx = step;
 
-        store.nudgeSelectedLayers(dx, dy);
+          store.nudgeSelectedLayers(dx, dy);
+          return;
+        }
+
+        // When no layers are selected, ArrowUp/ArrowDown navigates previous/next scene
+        if (!isCmdOrCtrl && !e.altKey && (key === "ArrowUp" || key === "ArrowDown")) {
+          e.preventDefault();
+          const currIdx = scenes.findIndex((s) => s.id === activeSceneId);
+          if (key === "ArrowUp" && currIdx > 0) {
+            store.setActiveScene(scenes[currIdx - 1].id);
+          } else if (key === "ArrowDown" && currIdx < scenes.length - 1) {
+            store.setActiveScene(scenes[currIdx + 1].id);
+          }
+          return;
+        }
         return;
       }
 
-      // Tool Switching Shortcuts (Select: V, Hand: H, Tilt: Y, Move: G, Scissors: C)
+      // Shift shortcuts: Arrow (Shift + L), Animate Mode Toggle (Shift + A)
+      if (e.shiftKey && !isCmdOrCtrl && !e.altKey) {
+        const uiStore = useEditorUIStore.getState();
+        if (key === "L" || e.code === "KeyL") {
+          e.preventDefault();
+          uiStore.setActiveTool("arrow");
+          return;
+        }
+        if (key === "A" || e.code === "KeyA") {
+          e.preventDefault();
+          uiStore.toggleAnimateMode();
+          return;
+        }
+      }
+
+      // No-modifier shortcuts: Trim, Opacity, Home/End, Tools
       if (!isCmdOrCtrl && !e.altKey && !e.shiftKey) {
         const uiStore = useEditorUIStore.getState();
+
+        // Opacity 10%–90% ('1'–'9') and 100% ('0' when layer selected)
+        if (key >= "0" && key <= "9") {
+          if (selectedLayerIds.length > 0) {
+            e.preventDefault();
+            const opacityVal = key === "0" ? 1.0 : parseInt(key, 10) / 10;
+            store.setSelectedLayersOpacity(opacityVal);
+            return;
+          } else if (key === "0") {
+            // '0' with no selection navigates to timeline start
+            e.preventDefault();
+            uiStore.setCurrentFrame(0);
+            return;
+          }
+        }
+
+        // Timeline Start / End
+        if (key === "Home") {
+          e.preventDefault();
+          uiStore.setCurrentFrame(0);
+          return;
+        }
+        if (key === "End") {
+          e.preventDefault();
+          const dur = currentScene?.durationFrames ?? 180;
+          uiStore.setCurrentFrame(dur);
+          return;
+        }
+
+        // Trim In (Q) / Trim Out (W)
+        if (key === "q" || key === "Q") {
+          e.preventDefault();
+          store.trimInPointAtPlayhead();
+          return;
+        }
+        if (key === "w" || key === "W") {
+          e.preventDefault();
+          store.trimOutPointAtPlayhead();
+          return;
+        }
+
+        // Tool Switching Shortcuts (Select: V, Hand: H, Tilt: Y, Move: G, Scissors: C, Rect: R, Ellipse: O, Line: L, Text: T)
         if (key === "v" || key === "V") {
           e.preventDefault();
           uiStore.setActiveTool("scene");
@@ -220,6 +421,18 @@ export function useEditorShortcuts() {
         } else if (key === "c" || key === "C") {
           e.preventDefault();
           uiStore.setActiveTool("scissors");
+        } else if (key === "r" || key === "R") {
+          e.preventDefault();
+          uiStore.setActiveTool("rectangle");
+        } else if (key === "o" || key === "O") {
+          e.preventDefault();
+          uiStore.setActiveTool("ellipse");
+        } else if (key === "l" || key === "L") {
+          e.preventDefault();
+          uiStore.setActiveTool("line");
+        } else if (key === "t" || key === "T") {
+          e.preventDefault();
+          uiStore.setActiveTool("text");
         }
       }
     };
