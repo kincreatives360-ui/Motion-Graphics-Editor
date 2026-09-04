@@ -119,31 +119,30 @@ describe("LayerEffects store integration for LayerEffectsPanel", () => {
     expect(updatedLayer.effects).toHaveLength(5);
     expect(updatedLayer.effectsOrder).toEqual([dsId, glowId, bbId, lbId, lgId]);
 
-
     // Check defaults
-    const ds = updatedLayer.effects.find((e) => e.id === dsId) as any;
+    const ds = updatedLayer.effects?.find((e) => e.id === dsId) as any;
     expect(ds.offsetX).toBe(4);
     expect(ds.offsetY).toBe(4);
     expect(ds.blur).toBe(12);
     expect(ds.color).toBe("#000000");
     expect(ds.opacity).toBe(0.5);
 
-    const glow = updatedLayer.effects.find((e) => e.id === glowId) as any;
+    const glow = updatedLayer.effects?.find((e) => e.id === glowId) as any;
     expect(glow.blur).toBe(16);
     expect(glow.intensity).toBe(1);
     expect(glow.mode).toBe("edge");
     expect(glow.blend).toBe("add");
 
-    const bb = updatedLayer.effects.find((e) => e.id === bbId) as any;
+    const bb = updatedLayer.effects?.find((e) => e.id === bbId) as any;
     expect(bb.blur).toBe(8);
 
-    const lb = updatedLayer.effects.find((e) => e.id === lbId) as any;
+    const lb = updatedLayer.effects?.find((e) => e.id === lbId) as any;
     expect(lb.blur).toBe(8);
     expect(lb.mode).toBe("uniform");
     expect(lb.endBlur).toBe(16);
     expect(lb.angle).toBe(270);
 
-    const lg = updatedLayer.effects.find((e) => e.id === lgId) as any;
+    const lg = updatedLayer.effects?.find((e) => e.id === lgId) as any;
     expect(lg.blur).toBe(8);
     expect(lg.refraction).toBe(0.3);
     expect(lg.dispersion).toBe(0.1);
@@ -153,26 +152,26 @@ describe("LayerEffects store integration for LayerEffectsPanel", () => {
   it("supports toggling visibility, reordering, updating and removing layer effects", () => {
     const state = useEditorStore.getState();
     const layerId = state.scenes[0].layers[0].id;
-    const effId = state.scenes[0].layers[0].effects[0]?.id || state.addLayerEffect(layerId, "dropShadow");
+    const effId = state.scenes[0].layers[0].effects?.[0]?.id || state.addLayerEffect(layerId, "dropShadow");
 
     // Toggle visible
     state.toggleLayerEffectVisible(layerId, effId);
     let layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-    expect(layer.effects.find((e) => e.id === effId)?.visible).toBe(false);
+    expect(layer.effects?.find((e) => e.id === effId)?.visible).toBe(false);
 
     state.toggleLayerEffectVisible(layerId, effId);
     layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-    expect(layer.effects.find((e) => e.id === effId)?.visible).toBe(true);
+    expect(layer.effects?.find((e) => e.id === effId)?.visible).toBe(true);
 
     // Update property
     state.updateLayerEffect(layerId, effId, { blur: 30 });
     layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-    expect((layer.effects.find((e) => e.id === effId) as any)?.blur).toBe(30);
+    expect((layer.effects?.find((e) => e.id === effId) as any)?.blur).toBe(30);
 
     // Remove effect
     state.removeLayerEffect(layerId, effId);
     layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-    expect(layer.effects.find((e) => e.id === effId)).toBeUndefined();
-    expect(layer.effectsOrder.includes(effId)).toBe(false);
+    expect(layer.effects?.find((e) => e.id === effId)).toBeUndefined();
+    expect(layer.effectsOrder?.includes(effId)).toBe(false);
   });
 });
