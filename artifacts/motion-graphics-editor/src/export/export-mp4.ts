@@ -85,6 +85,7 @@ export async function exportSceneToWebCodecsMp4(
     const videoFrame = new (window as any).VideoFrame(canvas, {
       timestamp: f * frameDurationUs,
       duration: frameDurationUs,
+      visibleRect: { x: 0, y: 0, width, height },
     });
 
     const isKeyframe = f % (fps * 2) === 0;

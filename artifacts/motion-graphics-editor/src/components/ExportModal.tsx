@@ -97,8 +97,10 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
     }
   }, [open]);
 
-  const outputWidth = Math.round(nativeWidth * resolutionScale);
-  const outputHeight = Math.round(nativeHeight * resolutionScale);
+  const rawWidth = Math.round(nativeWidth * resolutionScale);
+  const rawHeight = Math.round(nativeHeight * resolutionScale);
+  const outputWidth = rawWidth % 2 === 0 ? rawWidth : rawWidth - 1;
+  const outputHeight = rawHeight % 2 === 0 ? rawHeight : rawHeight - 1;
   const totalFrames = activeScene?.durationFrames || 180;
   const durationSec = (totalFrames / targetFps).toFixed(1);
 

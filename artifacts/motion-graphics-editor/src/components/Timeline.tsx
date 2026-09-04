@@ -21,12 +21,11 @@ import {
   Film,
   ChevronLeft,
   Sun,
-} from "lucide-react";
-import { SceneFilmstrip } from "./SceneFilmstrip";
   Volume2,
   VolumeX,
   Music,
 } from "lucide-react";
+import { SceneFilmstrip } from "./SceneFilmstrip";
 import { decodeAudioFile, syncAudioPlayback, stopAudioPlayback } from "../lib/audio-manager";
 import { useEditorStore, useEditorUIStore, type Layer } from "../store/editor-store";
 import {

@@ -309,6 +309,35 @@ export async function preloadSceneImages(scene: Scene): Promise<void> {
 }
 
 /**
+ * Robust cross-environment rounded rectangle path helper with arcTo fallback.
+ */
+export function drawRoundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number | number[],
+) {
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(x, y, w, h, r);
+    return;
+  }
+  const rad = Array.isArray(r) ? (r[0] || 0) : (r || 0);
+  const radius = Math.min(rad, Math.abs(w) / 2, Math.abs(h) / 2);
+  if (radius <= 0) {
+    ctx.rect(x, y, w, h);
+    return;
+  }
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+/**
  * Renders realistic device frames (iPhone 16 Pro, MacBook Pro, Safari Browser).
  */
 export function drawDeviceMockup(
@@ -330,56 +359,47 @@ export function drawDeviceMockup(
 
     ctx.strokeStyle = "#27272a";
     ctx.lineWidth = bezel;
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath();
-      ctx.roundRect(-outerW / 2, -outerH / 2, outerW, outerH, radius);
-      ctx.stroke();
-    }
+    ctx.beginPath();
+    drawRoundRectPath(ctx, -outerW / 2, -outerH / 2, outerW, outerH, radius);
+    ctx.stroke();
 
     // Dynamic Island Pill
     const pillW = Math.min(88, width * 0.3);
     const pillH = 20;
     ctx.fillStyle = "#000000";
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath();
-      ctx.roundRect(-pillW / 2, -height / 2 + 6, pillW, pillH, 10);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    drawRoundRectPath(ctx, -pillW / 2, -height / 2 + 6, pillW, pillH, 10);
+    ctx.fill();
   } else if (type === "macbook") {
     // MacBook Display Bezel & Notch
     const bezel = 14;
     ctx.strokeStyle = "#18181b";
     ctx.lineWidth = bezel;
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath();
-      ctx.roundRect(-width / 2 - bezel / 2, -height / 2 - bezel / 2, width + bezel, height + bezel, 10);
-      ctx.stroke();
-    }
+    ctx.beginPath();
+    drawRoundRectPath(ctx, -width / 2 - bezel / 2, -height / 2 - bezel / 2, width + bezel, height + bezel, 10);
+    ctx.stroke();
+
     // Camera Notch
     ctx.fillStyle = "#09090b";
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath();
-      ctx.roundRect(-24, -height / 2, 48, 12, [0, 0, 4, 4]);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    drawRoundRectPath(ctx, -24, -height / 2, 48, 12, [0, 0, 4, 4]);
+    ctx.fill();
+
     // Aluminum Base Chin
     const baseW = width * 1.15;
     const baseH = 12;
     ctx.fillStyle = "#27272a";
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath();
-      ctx.roundRect(-baseW / 2, height / 2 + bezel / 2, baseW, baseH, [0, 0, 6, 6]);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    drawRoundRectPath(ctx, -baseW / 2, height / 2 + bezel / 2, baseW, baseH, [0, 0, 6, 6]);
+    ctx.fill();
   } else if (type === "safari" || (type as string) === "browser") {
     // Modern Browser Header
     const barH = 34;
     ctx.fillStyle = "#1e2025";
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath();
-      ctx.roundRect(-width / 2, -height / 2 - barH, width, barH, [8, 8, 0, 0]);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    drawRoundRectPath(ctx, -width / 2, -height / 2 - barH, width, barH, [8, 8, 0, 0]);
+    ctx.fill();
+
     // Window control buttons (Red, Yellow, Green)
     const btnY = -height / 2 - barH / 2;
     const startX = -width / 2 + 16;
@@ -390,14 +410,13 @@ export function drawDeviceMockup(
       ctx.arc(startX + idx * 16, btnY, 5, 0, Math.PI * 2);
       ctx.fill();
     });
+
     // Address Bar Pill
     const searchW = Math.min(220, width * 0.45);
     ctx.fillStyle = "#121417";
-    if (typeof ctx.roundRect === "function") {
-      ctx.beginPath();
-      ctx.roundRect(-searchW / 2, btnY - 9, searchW, 18, 5);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    drawRoundRectPath(ctx, -searchW / 2, btnY - 9, searchW, 18, 5);
+    ctx.fill();
   }
 
   ctx.restore();
@@ -430,8 +449,8 @@ export function buildLayerGeometryPath(
     const radius = (layer.shape as any).radius || 0;
     if (kind === "ellipse") {
       ctx.ellipse(0, 0, width / 2, height / 2, 0, 0, Math.PI * 2);
-    } else if (radius > 0 && typeof ctx.roundRect === "function") {
-      ctx.roundRect(-width / 2, -height / 2, width, height, radius);
+    } else if (radius > 0) {
+      drawRoundRectPath(ctx, -width / 2, -height / 2, width, height, radius);
     } else {
       ctx.rect(-width / 2, -height / 2, width, height);
     }

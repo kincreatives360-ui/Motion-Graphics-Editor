@@ -478,7 +478,19 @@ export function Inspector() {
   };
 
 
-  const camera = activeScene?.camera || { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 };
+  const camera = activeScene?.camera || {
+    x: 0,
+    y: 0,
+    z: 0,
+    pitch: 0,
+    yaw: 0,
+    roll: 0,
+    fov: 60,
+    focalLengthMm: 50,
+    apertureFStop: 2.8,
+    aperture: 2.8,
+    focusDistance: 1000,
+  };
   const cameraBlocks = (activeScene?.animationBlocks || []).filter(
     (b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || b.layerId === null),
   );
@@ -670,10 +682,7 @@ export function Inspector() {
   return (
     <aside className="right-panel flex flex-col h-full relative" aria-label="Project inspector">
       {/* Inspector Topbar */}
-      <div className="inspector-topbar">
-        <div className="avatar" data-testid="avatar-user" aria-label="User avatar">
-          A
-        </div>
+      <div className="inspector-topbar justify-end">
         <div className="inspector-actions">
           <IconButton label="Inspector settings" testId="button-inspector-settings">
             <SlidersHorizontal size={12} strokeWidth={1.7} />
@@ -853,13 +862,15 @@ export function Inspector() {
                         </span>
                         <button
                           type="button"
+                          id="button-reset-camera"
+                          data-testid="button-reset-camera"
                           className="text-[8.5px] text-[#81838a] hover:text-[#d8d9dc] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#1f2127]"
                           onClick={() => {
                             setIsCameraSelected(true);
                             setActiveTool("camera");
-                            updateCamera({ x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 });
+                            resetCamera();
                           }}
-                          title="Reset camera coordinates"
+                          title="Reset all camera parameters"
                         >
                           <RotateCcw size={9} />
                           <span>Reset</span>

@@ -2181,6 +2181,7 @@ export const useEditorStore = create<EditorStoreState>()(
                     fov: 60,
                     focalLengthMm: 50,
                     apertureFStop: 2.8,
+                    aperture: 2.8,
                     focusDistance: 1000,
                     target: { x: 960, y: 540, z: 0 },
                   },
@@ -3116,6 +3117,9 @@ export const useEditorStore = create<EditorStoreState>()(
           scenes: s.scenes.map((sc) =>
             sc.id === scId ? { ...sc, animationBlocks: updatedBlocks } : sc,
           ),
+        }));
+      },
+
       setAudioTrack: (sceneId, track) => {
         const targetSceneId = sceneId || get().activeSceneId;
         set((state) => ({

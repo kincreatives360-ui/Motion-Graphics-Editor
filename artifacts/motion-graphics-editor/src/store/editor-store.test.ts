@@ -1135,6 +1135,58 @@ describe("Editor Stores Separation", () => {
       expect(filterLayersBySearch(allLayers, "nonexistent-xyz")).toEqual([]);
     });
   });
+
+  describe("Camera Controls & Reset", () => {
+    it("resets all camera parameters to standard defaults", () => {
+      const docStore = useEditorStore.getState();
+
+      // Modify every camera parameter to non-default values
+      docStore.updateCamera({
+        x: 350,
+        y: -120,
+        z: 800,
+        pitch: 45,
+        yaw: -30,
+        roll: 15,
+        fov: 90,
+        focalLengthMm: 85,
+        apertureFStop: 1.4,
+        aperture: 1.4,
+        focusDistance: 350,
+        target: { x: 400, y: 300, z: 50 },
+      });
+
+      const updatedCam = useEditorStore.getState().scenes[0].camera;
+      expect(updatedCam.x).toBe(350);
+      expect(updatedCam.y).toBe(-120);
+      expect(updatedCam.z).toBe(800);
+      expect(updatedCam.pitch).toBe(45);
+      expect(updatedCam.yaw).toBe(-30);
+      expect(updatedCam.roll).toBe(15);
+      expect(updatedCam.fov).toBe(90);
+      expect(updatedCam.focalLengthMm).toBe(85);
+      expect(updatedCam.aperture).toBe(1.4);
+      expect(updatedCam.focusDistance).toBe(350);
+
+      // Invoke resetCamera
+      docStore.resetCamera();
+
+      // Verify all parameters are completely reset
+      const resetCam = useEditorStore.getState().scenes[0].camera;
+      expect(resetCam.x).toBe(0);
+      expect(resetCam.y).toBe(0);
+      expect(resetCam.z).toBe(0);
+      expect(resetCam.pitch).toBe(0);
+      expect(resetCam.yaw).toBe(0);
+      expect(resetCam.roll).toBe(0);
+      expect(resetCam.fov).toBe(60);
+      expect(resetCam.focalLengthMm).toBe(50);
+      expect(resetCam.apertureFStop).toBe(2.8);
+      expect(resetCam.aperture).toBe(2.8);
+      expect(resetCam.focusDistance).toBe(1000);
+      expect(resetCam.target).toEqual({ x: 960, y: 540, z: 0 });
+    });
+  });
 });
 
 
