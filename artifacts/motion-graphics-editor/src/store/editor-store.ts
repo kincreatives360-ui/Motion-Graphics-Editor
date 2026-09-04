@@ -34,6 +34,8 @@ export interface Transform {
   width: number;
   height: number;
   rotation: number; // degrees
+  scaleX?: number;
+  scaleY?: number;
   rotateX?: number; // degrees (-80 to 80, 3D tilt/pitch)
   rotateY?: number; // degrees (-80 to 80, 3D swivel/yaw)
   depth: number; // 0 = camera plane, positive = further away
@@ -184,6 +186,7 @@ export interface Layer {
   type: LayerType;
   transform: Transform;
   opacity: number; // 0-1
+  blendMode?: string;
   visible: boolean;
   locked: boolean;
   mockup?: MockupType;

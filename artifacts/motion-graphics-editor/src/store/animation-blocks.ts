@@ -40,6 +40,7 @@ export interface Keyframe<T = number | string> {
 export interface KeyframeTrackBlock {
   id: string;
   kind: "keyframe";
+  sceneId?: string;
   layerId: string;
   property: AnimatableProperty;
   keyframes: Keyframe<number | string>[];
@@ -64,6 +65,7 @@ export interface CameraFraming {
 export interface PresetAnimationBlock {
   id: string;
   kind?: "preset";
+  sceneId?: string;
   layerId: string | null; // null = camera block
   preset: BlockPreset;
   startFrame: number;

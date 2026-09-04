@@ -6,6 +6,7 @@ import {
   createDefaultLayerEffect,
   type Layer,
 } from "./editor-store";
+import type { KeyframeTrackBlock } from "./animation-blocks";
 import { filterLayersBySearch } from "../components/LayerTree";
 
 describe("Editor Stores Separation", () => {
@@ -412,20 +413,20 @@ describe("Editor Stores Separation", () => {
       const glowId = store.addLayerEffect(layerId, "glow");
 
       let layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-      expect(layer.effects.length).toBe(2);
+      expect(layer.effects?.length).toBe(2);
       expect(layer.effectsOrder).toEqual([dsId, glowId]);
 
       // Update dropShadow
       store.updateLayerEffect(layerId, dsId, { blur: 24, opacity: 0.8 });
       layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-      const dsEffect = layer.effects.find((e) => e.id === dsId);
+      const dsEffect = layer.effects?.find((e) => e.id === dsId);
       expect((dsEffect as any)?.blur).toBe(24);
       expect((dsEffect as any)?.opacity).toBe(0.8);
 
       // Toggle visibility
       store.toggleLayerEffectVisible(layerId, glowId);
       layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-      const glowEffect = layer.effects.find((e) => e.id === glowId);
+      const glowEffect = layer.effects?.find((e) => e.id === glowId);
       expect(glowEffect?.visible).toBe(false);
 
       // Reorder
@@ -436,9 +437,9 @@ describe("Editor Stores Separation", () => {
       // Remove effect
       store.removeLayerEffect(layerId, dsId);
       layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-      expect(layer.effects.length).toBe(1);
+      expect(layer.effects?.length).toBe(1);
       expect(layer.effectsOrder).toEqual([glowId]);
-      expect(layer.effects[0].id).toBe(glowId);
+      expect(layer.effects?.[0].id).toBe(glowId);
     });
 
     it("replaces layer effect type while preserving id and enabled/visible flags", () => {
@@ -449,7 +450,7 @@ describe("Editor Stores Separation", () => {
       store.replaceLayerEffectType(layerId, fxId, "liquidGlass");
 
       const layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-      const replaced = layer.effects.find((e) => e.id === fxId);
+      const replaced = layer.effects?.find((e) => e.id === fxId);
       expect(replaced).toBeDefined();
       expect(replaced?.id).toBe(fxId);
       expect(replaced?.type).toBe("liquidGlass");
@@ -478,7 +479,7 @@ describe("Editor Stores Separation", () => {
       expect(blockedId).toBe("");
 
       let layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-      expect(layer.effects.length).toBe(0);
+      expect(layer.effects?.length).toBe(0);
 
       // Add valid effect then try to replace with layerBlur
       const dsId = store.addLayerEffect(layerId, "dropShadow");
@@ -486,7 +487,7 @@ describe("Editor Stores Separation", () => {
 
       store.replaceLayerEffectType(layerId, dsId, "layerBlur");
       layer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === layerId)!;
-      expect(layer.effects[0].type).toBe("dropShadow");
+      expect(layer.effects?.[0].type).toBe("dropShadow");
     });
 
     it("clones layer effects with fresh IDs during layer duplication and pasting", () => {
@@ -500,17 +501,17 @@ describe("Editor Stores Separation", () => {
       const scene = useEditorStore.getState().scenes[0];
       const dupLayer = scene.layers.find((l) => l.id === dupLayerId)!;
 
-      expect(dupLayer.effects.length).toBe(1);
-      expect(dupLayer.effects[0].type).toBe("glow");
-      expect(dupLayer.effects[0].id).not.toBe(fxId);
-      expect(dupLayer.effectsOrder).toEqual([dupLayer.effects[0].id]);
+      expect(dupLayer.effects?.length).toBe(1);
+      expect(dupLayer.effects?.[0].type).toBe("glow");
+      expect(dupLayer.effects?.[0].id).not.toBe(fxId);
+      expect(dupLayer.effectsOrder).toEqual([dupLayer.effects?.[0].id]);
 
       // Test paste
       const [pastedLayerId] = store.pasteLayers([dupLayer]);
       const pastedLayer = useEditorStore.getState().scenes[0].layers.find((l) => l.id === pastedLayerId)!;
-      expect(pastedLayer.effects.length).toBe(1);
-      expect(pastedLayer.effects[0].id).not.toBe(dupLayer.effects[0].id);
-      expect(pastedLayer.effectsOrder).toEqual([pastedLayer.effects[0].id]);
+      expect(pastedLayer.effects?.length).toBe(1);
+      expect(pastedLayer.effects?.[0].id).not.toBe(dupLayer.effects?.[0].id);
+      expect(pastedLayer.effectsOrder).toEqual([pastedLayer.effects?.[0].id]);
     });
   });
 
@@ -589,7 +590,8 @@ describe("Editor Stores Separation", () => {
       const layerId = store.addLayer("scene-1", {
         name: "Box",
         type: "shape",
-        transform: { x: 500, y: 300, width: 200, height: 100, rotation: 0, opacity: 1 },
+        opacity: 1,
+        transform: { x: 500, y: 300, width: 200, height: 100, rotation: 0, depth: 0 },
       });
       store.selectLayers([layerId]);
 
@@ -629,12 +631,14 @@ describe("Editor Stores Separation", () => {
       const l1Id = store.addLayer("scene-1", {
         name: "L1",
         type: "shape",
-        transform: { x: 100, y: 200, width: 100, height: 100, rotation: 0, opacity: 1 },
+        opacity: 1,
+        transform: { x: 100, y: 200, width: 100, height: 100, rotation: 0, depth: 0 },
       });
       const l2Id = store.addLayer("scene-1", {
         name: "L2",
         type: "shape",
-        transform: { x: 300, y: 400, width: 100, height: 100, rotation: 0, opacity: 1 },
+        opacity: 1,
+        transform: { x: 300, y: 400, width: 100, height: 100, rotation: 0, depth: 0 },
       });
       store.selectLayers([l1Id, l2Id]);
 
@@ -656,7 +660,8 @@ describe("Editor Stores Separation", () => {
       const layerId = store.addLayer("scene-1", {
         name: "Card",
         type: "shape",
-        transform: { x: 100, y: 100, width: 200, height: 200, rotation: 0, opacity: 1 },
+        opacity: 1,
+        transform: { x: 100, y: 100, width: 200, height: 200, rotation: 0, depth: 0 },
       });
       store.selectLayers([layerId]);
 
@@ -679,12 +684,14 @@ describe("Editor Stores Separation", () => {
       const l1Id = store.addLayer("scene-1", {
         name: "L1",
         type: "shape",
-        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0, opacity: 1 },
+        opacity: 1,
+        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0, depth: 0 },
       });
       const l2Id = store.addLayer("scene-1", {
         name: "L2",
         type: "shape",
-        transform: { x: 300, y: 100, width: 100, height: 100, rotation: 0, opacity: 1 },
+        opacity: 1,
+        transform: { x: 300, y: 100, width: 100, height: 100, rotation: 0, depth: 0 },
       });
       store.selectLayers([l1Id, l2Id]);
 
@@ -739,13 +746,13 @@ describe("Editor Stores Separation", () => {
         name: "Child 1",
         type: "shape",
         opacity: 0.8,
-        transform: { x: 50, y: 50, width: 100, height: 100, rotation: 10 },
+        transform: { x: 50, y: 50, width: 100, height: 100, rotation: 10, depth: 0 },
       });
       const l2 = store.addLayer("scene-1", {
         name: "Child 2",
         type: "shape",
         opacity: 1,
-        transform: { x: 200, y: 50, width: 100, height: 100, rotation: 0 },
+        transform: { x: 200, y: 50, width: 100, height: 100, rotation: 0, depth: 0 },
       });
 
       store.selectLayers([l1, l2]);
@@ -812,7 +819,7 @@ describe("Editor Stores Separation", () => {
         name: "Animated Box",
         type: "shape",
         opacity: 0.8,
-        transform: { x: 100, y: 150, width: 200, height: 200, rotation: 0 },
+        transform: { x: 100, y: 150, width: 200, height: 200, rotation: 0, depth: 0 },
       });
 
       // Initially no animation blocks
@@ -823,7 +830,7 @@ describe("Editor Stores Separation", () => {
 
       const blocks = useEditorStore.getState().scenes[0].animationBlocks;
       expect(blocks.length).toBe(1);
-      const track = blocks[0];
+      const track = blocks[0] as KeyframeTrackBlock;
       expect(track.layerId).toBe(layerId);
       expect(track.property).toBe("x");
       expect(track.keyframes.length).toBe(2);
@@ -842,21 +849,21 @@ describe("Editor Stores Separation", () => {
       const layerId = store.addLayer("scene-1", {
         name: "Box",
         type: "shape",
-        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0 },
+        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0, depth: 0 },
       });
 
       store.recordKeyframe(layerId, "y", 200, 30, "scene-1");
       let blocks = useEditorStore.getState().scenes[0].animationBlocks;
-      expect(blocks[0].keyframes.find((k) => k.frame === 30)?.value).toBe(200);
+      expect((blocks[0] as KeyframeTrackBlock).keyframes.find((k: any) => k.frame === 30)?.value).toBe(200);
 
       // Update at frame 30 with new value 450
       useEditorStore.getState().recordKeyframe(layerId, "y", 450, 30, "scene-1");
       blocks = useEditorStore.getState().scenes[0].animationBlocks;
       expect(blocks.length).toBe(1);
-      const kf30 = blocks[0].keyframes.find((k) => k.frame === 30);
+      const kf30 = (blocks[0] as KeyframeTrackBlock).keyframes.find((k: any) => k.frame === 30);
       expect(kf30?.value).toBe(450);
       // Keyframe count should still be 2 (baseline + frame 30)
-      expect(blocks[0].keyframes.length).toBe(2);
+      expect((blocks[0] as KeyframeTrackBlock).keyframes.length).toBe(2);
     });
 
     it("appends and maintains sorted order when recording keyframe at a new frame on existing track", () => {
@@ -864,7 +871,7 @@ describe("Editor Stores Separation", () => {
       const layerId = store.addLayer("scene-1", {
         name: "Box",
         type: "shape",
-        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0 },
+        transform: { x: 100, y: 100, width: 100, height: 100, rotation: 0, depth: 0 },
       });
 
       // Create initial track at frame 60
@@ -874,9 +881,9 @@ describe("Editor Stores Separation", () => {
       // Add keyframe at frame 45 (between baseline 30 and 60)
       useEditorStore.getState().recordKeyframe(layerId, "rotation", 30, 45, "scene-1");
 
-      const track = useEditorStore.getState().scenes[0].animationBlocks[0];
+      const track = useEditorStore.getState().scenes[0].animationBlocks[0] as KeyframeTrackBlock;
       expect(track.keyframes.length).toBe(4);
-      const frames = track.keyframes.map((k) => k.frame);
+      const frames = track.keyframes.map((k: any) => k.frame);
       expect(frames).toEqual([30, 45, 60, 90]);
     });
 
@@ -885,7 +892,7 @@ describe("Editor Stores Separation", () => {
       const layerId = store.addLayer("scene-1", {
         name: "Nudge Box",
         type: "shape",
-        transform: { x: 50, y: 50, width: 100, height: 100, rotation: 0 },
+        transform: { x: 50, y: 50, width: 100, height: 100, rotation: 0, depth: 0 },
       });
       store.selectLayers([layerId]);
 
@@ -910,12 +917,12 @@ describe("Editor Stores Separation", () => {
 
       const blocks = useEditorStore.getState().scenes[0].animationBlocks;
       expect(blocks.length).toBe(2);
-      const xTrack = blocks.find((b) => b.property === "x");
-      const yTrack = blocks.find((b) => b.property === "y");
+      const xTrack = blocks.find((b) => (b as KeyframeTrackBlock).property === "x") as KeyframeTrackBlock | undefined;
+      const yTrack = blocks.find((b) => (b as KeyframeTrackBlock).property === "y") as KeyframeTrackBlock | undefined;
       expect(xTrack).toBeDefined();
       expect(yTrack).toBeDefined();
-      expect(xTrack?.keyframes.find((k) => k.frame === 50)?.value).toBe(75);
-      expect(yTrack?.keyframes.find((k) => k.frame === 50)?.value).toBe(60);
+      expect(xTrack?.keyframes.find((k: any) => k.frame === 50)?.value).toBe(75);
+      expect(yTrack?.keyframes.find((k: any) => k.frame === 50)?.value).toBe(60);
     });
   });
 
@@ -960,9 +967,9 @@ describe("Editor Stores Separation", () => {
       scene = useEditorStore.getState().scenes[0];
       expect(scene.layers.find((l) => l.id === l1)?.opacity).toBe(0.8);
       expect(scene.animationBlocks.length).toBe(1);
-      const opTrack = scene.animationBlocks[0];
+      const opTrack = scene.animationBlocks[0] as KeyframeTrackBlock;
       expect(opTrack.property).toBe("opacity");
-      expect(opTrack.keyframes.find((k) => k.frame === 45)?.value).toBe(0.8);
+      expect(opTrack.keyframes.find((k: any) => k.frame === 45)?.value).toBe(0.8);
     });
 
     it("splits animation block at playhead into two continuous blocks", () => {
@@ -1074,30 +1081,30 @@ describe("Editor Stores Separation", () => {
 
     it("detects device mockup on layers for conditional Light track rendering", () => {
       const plainLayers: Layer[] = [
-        { id: "l1", name: "Text 1", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 100, height: 50, rotation: 0 } },
-        { id: "l2", name: "Shape 1", type: "shape", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0 } },
+        { id: "l1", name: "Text 1", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 100, height: 50, rotation: 0, depth: 0 } },
+        { id: "l2", name: "Shape 1", type: "shape", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 100, height: 100, rotation: 0, depth: 0 } },
       ];
       expect(plainLayers.some((l) => Boolean(l.mockup && l.mockup !== "none"))).toBe(false);
 
       const mockupLayers: Layer[] = [
         ...plainLayers,
-        { id: "l3", name: "Phone Mockup", type: "image", opacity: 1, visible: true, locked: false, mockup: "iphone", transform: { x: 0, y: 0, width: 400, height: 800, rotation: 0 } },
+        { id: "l3", name: "Phone Mockup", type: "image", opacity: 1, visible: true, locked: false, mockup: "iphone", transform: { x: 0, y: 0, width: 400, height: 800, rotation: 0, depth: 0 } },
       ];
       expect(mockupLayers.some((l) => Boolean(l.mockup && l.mockup !== "none"))).toBe(true);
 
       const noneMockupLayers: Layer[] = [
         ...plainLayers,
-        { id: "l4", name: "None Mockup", type: "image", opacity: 1, visible: true, locked: false, mockup: "none", transform: { x: 0, y: 0, width: 400, height: 800, rotation: 0 } },
+        { id: "l4", name: "None Mockup", type: "image", opacity: 1, visible: true, locked: false, mockup: "none", transform: { x: 0, y: 0, width: 400, height: 800, rotation: 0, depth: 0 } },
       ];
       expect(noneMockupLayers.some((l) => Boolean(l.mockup && l.mockup !== "none"))).toBe(false);
     });
 
     it("filters layers by search query while preserving ancestor groups and hierarchy", () => {
-      const groupA: Layer = { id: "g-a", name: "Hero Section", type: "group", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 200, height: 200, rotation: 0 } };
-      const childA1: Layer = { id: "c-a1", parentId: "g-a", name: "Headline Text", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 10, width: 100, height: 30, rotation: 0 } };
-      const childA2: Layer = { id: "c-a2", parentId: "g-a", name: "Accent Badge", type: "shape", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 50, width: 40, height: 20, rotation: 0 } };
-      const groupB: Layer = { id: "g-b", name: "Footer Group", type: "group", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 400, width: 200, height: 100, rotation: 0 } };
-      const childB1: Layer = { id: "c-b1", parentId: "g-b", name: "Copyright Text", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 10, width: 80, height: 20, rotation: 0 } };
+      const groupA: Layer = { id: "g-a", name: "Hero Section", type: "group", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 0, width: 200, height: 200, rotation: 0, depth: 0 } };
+      const childA1: Layer = { id: "c-a1", parentId: "g-a", name: "Headline Text", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 10, width: 100, height: 30, rotation: 0, depth: 0 } };
+      const childA2: Layer = { id: "c-a2", parentId: "g-a", name: "Accent Badge", type: "shape", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 50, width: 40, height: 20, rotation: 0, depth: 0 } };
+      const groupB: Layer = { id: "g-b", name: "Footer Group", type: "group", opacity: 1, visible: true, locked: false, transform: { x: 0, y: 400, width: 200, height: 100, rotation: 0, depth: 0 } };
+      const childB1: Layer = { id: "c-b1", parentId: "g-b", name: "Copyright Text", type: "text", opacity: 1, visible: true, locked: false, transform: { x: 10, y: 10, width: 80, height: 20, rotation: 0, depth: 0 } };
 
       const allLayers = [groupA, childA1, childA2, groupB, childB1];
 
