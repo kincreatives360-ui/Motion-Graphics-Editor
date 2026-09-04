@@ -50,6 +50,17 @@ export interface KeyframeTrackBlock {
   customCurve?: [number, number, number, number];
 }
 
+export interface CameraFraming {
+  x: number;
+  y: number;
+  z: number;
+  pitch?: number;
+  yaw?: number;
+  roll?: number;
+  fov?: number;
+  focusDistance?: number;
+}
+
 export interface PresetAnimationBlock {
   id: string;
   kind?: "preset";
@@ -59,7 +70,10 @@ export interface PresetAnimationBlock {
   endFrame: number;
   easing: "linear" | "ease-in-out" | "spring" | "custom";
   customCurve?: [number, number, number, number]; // cubic-bezier control points [x1, y1, x2, y2], only if easing === "custom"
-  cameraTo?: Partial<{ x: number; y: number; z: number; fov: number }>;
+  cameraTo?: Partial<{ x: number; y: number; z: number; fov: number; pitch?: number; yaw?: number; roll?: number; focusDistance?: number }>;
+  framingA?: CameraFraming;
+  framingB?: CameraFraming;
+  rackFocus?: boolean;
 }
 
 export type AnimationBlock = PresetAnimationBlock | KeyframeTrackBlock;
@@ -696,6 +710,46 @@ export function sampleCamera(
   };
 
   for (const block of cameraBlocks) {
+    const duration = Math.max(1, block.endFrame - block.startFrame);
+
+    // Two-Framings Cinematic Camera Support
+    if (block.framingA && block.framingB) {
+      const fA = block.framingA;
+      const fB = block.framingB;
+
+      if (frame < block.startFrame) {
+        currentCamera.x = fA.x;
+        currentCamera.y = fA.y;
+        currentCamera.z = fA.z;
+        if (fA.pitch !== undefined) currentCamera.pitch = fA.pitch;
+        if (fA.yaw !== undefined) currentCamera.yaw = fA.yaw;
+        if (fA.roll !== undefined) currentCamera.roll = fA.roll;
+        if (fA.fov !== undefined) currentCamera.fov = fA.fov;
+        if (fA.focusDistance !== undefined) currentCamera.focusDistance = fA.focusDistance;
+      } else if (frame >= block.startFrame && frame <= block.endFrame) {
+        const t = clamp((frame - block.startFrame) / duration, 0, 1);
+        const eased = applyEasing(t, block.easing || "ease-in-out", block.customCurve);
+        currentCamera.x = lerp(fA.x, fB.x, eased);
+        currentCamera.y = lerp(fA.y, fB.y, eased);
+        currentCamera.z = lerp(fA.z, fB.z, eased);
+        currentCamera.pitch = lerp(fA.pitch ?? 0, fB.pitch ?? 0, eased);
+        currentCamera.yaw = lerp(fA.yaw ?? 0, fB.yaw ?? 0, eased);
+        currentCamera.roll = lerp(fA.roll ?? 0, fB.roll ?? 0, eased);
+        currentCamera.fov = lerp(fA.fov ?? 60, fB.fov ?? 60, eased);
+        currentCamera.focusDistance = lerp(fA.focusDistance ?? 1000, fB.focusDistance ?? 1000, eased);
+      } else if (frame > block.endFrame) {
+        currentCamera.x = fB.x;
+        currentCamera.y = fB.y;
+        currentCamera.z = fB.z;
+        if (fB.pitch !== undefined) currentCamera.pitch = fB.pitch;
+        if (fB.yaw !== undefined) currentCamera.yaw = fB.yaw;
+        if (fB.roll !== undefined) currentCamera.roll = fB.roll;
+        if (fB.fov !== undefined) currentCamera.fov = fB.fov;
+        if (fB.focusDistance !== undefined) currentCamera.focusDistance = fB.focusDistance;
+      }
+      continue;
+    }
+
     if (!block.cameraTo) continue;
 
     const dx = block.cameraTo.x ?? 0;
@@ -706,8 +760,6 @@ export function sampleCamera(
     const dyaw = (block.cameraTo as any).yaw ?? 0;
     const droll = (block.cameraTo as any).roll ?? 0;
     const dfocus = (block.cameraTo as any).focusDistance ?? 0;
-
-    const duration = Math.max(1, block.endFrame - block.startFrame);
 
     if (frame >= block.startFrame && frame <= block.endFrame) {
       const t = clamp((frame - block.startFrame) / duration, 0, 1);

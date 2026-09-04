@@ -15,7 +15,18 @@ import type { AnimationPreset, SceneTemplate } from "../presets/preset-library";
 export type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never;
 
 export type LayerType = "shape" | "text" | "image" | "group";
-export type MockupType = "none" | "iphone" | "macbook" | "safari";
+export type MockupType = "none" | "iphone" | "macbook" | "safari" | "browser";
+
+export interface AudioTrack {
+  id: string;
+  name: string;
+  url: string;
+  duration: number; // in seconds
+  volume: number; // 0 to 1
+  muted: boolean;
+  offsetFrames: number; // start frame on timeline, default 0
+  waveformData?: number[]; // normalized amplitude peaks [0..1]
+}
 
 export interface Transform {
   x: number;
@@ -405,6 +416,7 @@ export interface Scene {
   lighting?: SceneLighting;
   effects: SceneEffect[];
   effectsOrder: string[];
+  audioTrack?: AudioTrack | null;
 }
 
 export interface EditorDocument {
@@ -551,6 +563,10 @@ export interface EditorStoreState extends EditorDocument {
   trimOutPointAtPlayhead: (frame?: number, sceneId?: string) => void;
   applyAnimationPreset: (preset: AnimationPreset) => void;
   applySceneTemplate: (template: SceneTemplate, mode: "new" | "merge") => string;
+  setAudioTrack: (sceneId: string | undefined, track: AudioTrack | null) => void;
+  updateAudioTrack: (sceneId: string | undefined, partial: Partial<AudioTrack>) => void;
+  removeAudioTrack: (sceneId: string | undefined) => void;
+  applyZSpread: (sceneId?: string, spacing?: number) => void;
 }
 
 export interface EditorUIStoreState {
@@ -3100,6 +3116,75 @@ export const useEditorStore = create<EditorStoreState>()(
           scenes: s.scenes.map((sc) =>
             sc.id === scId ? { ...sc, animationBlocks: updatedBlocks } : sc,
           ),
+      setAudioTrack: (sceneId, track) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            return {
+              ...scene,
+              audioTrack: track,
+            };
+          }),
+        }));
+      },
+
+      updateAudioTrack: (sceneId, partial) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId || !scene.audioTrack) return scene;
+            return {
+              ...scene,
+              audioTrack: {
+                ...scene.audioTrack,
+                ...partial,
+              },
+            };
+          }),
+        }));
+      },
+
+      removeAudioTrack: (sceneId) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            return {
+              ...scene,
+              audioTrack: null,
+            };
+          }),
+        }));
+      },
+
+      applyZSpread: (sceneId, spacing = 50) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            const topLayers = scene.layers.filter((l) => !l.parentId);
+            const topIds = new Set(topLayers.map((l) => l.id));
+            const depthMap = new Map<string, number>();
+            topLayers.forEach((layer, idx) => {
+              depthMap.set(layer.id, idx * spacing);
+            });
+            return {
+              ...scene,
+              layers: scene.layers.map((layer) => {
+                if (topIds.has(layer.id)) {
+                  return {
+                    ...layer,
+                    transform: {
+                      ...layer.transform,
+                      depth: depthMap.get(layer.id) ?? 0,
+                    },
+                  };
+                }
+                return layer;
+              }),
+            };
+          }),
         }));
       },
     }),

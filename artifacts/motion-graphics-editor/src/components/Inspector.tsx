@@ -40,7 +40,11 @@ import {
   AlignEndVertical,
   FlipHorizontal,
   FlipVertical,
+  Volume2,
+  VolumeX,
+  Music,
 } from "lucide-react";
+import { decodeAudioFile } from "../lib/audio-manager";
 import { EffectStackPanel, type EffectTypeOption } from "./effects/EffectStackPanel";
 import { LayerEffectsPanel } from "./effects/LayerEffectsPanel";
 import {
@@ -194,6 +198,9 @@ export function Inspector() {
   const flipHorizontal = useEditorStore((state) => state.flipHorizontal);
   const flipVertical = useEditorStore((state) => state.flipVertical);
   const recordKeyframe = useEditorStore((state) => state.recordKeyframe);
+  const setAudioTrack = useEditorStore((state) => state.setAudioTrack);
+  const updateAudioTrack = useEditorStore((state) => state.updateAudioTrack);
+  const removeAudioTrack = useEditorStore((state) => state.removeAudioTrack);
   const openPresets = useEditorUIStore((state) => state.openPresets);
   const setExportModalOpen = useEditorUIStore((state) => state.setExportModalOpen);
   const setIsCameraSelected = useEditorUIStore((state) => state.setIsCameraSelected);
@@ -1258,6 +1265,181 @@ export function Inspector() {
                           testIdPrefix="scene-effect"
                         />
                       </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* 6. Audio Soundtrack & Beat Sync */}
+                  <AccordionItem value="audio" className="border-b-0">
+                    <AccordionTrigger className="py-2.5 text-[11px] font-semibold tracking-wider text-[#999ba0] uppercase hover:text-[#d8d9dc] hover:no-underline">
+                      <div className="flex items-center gap-1.5">
+                        <Music size={12} className="text-[#a78bfa]" />
+                        <span>Audio Soundtrack</span>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-3 pt-0 text-left">
+                      {activeScene?.audioTrack ? (
+                        <div className="space-y-2.5 p-2.5 bg-[#161226]/80 border border-[#2e1065]/60 rounded-md">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <Music size={11} className="text-[#a78bfa] shrink-0" />
+                              <span className="text-[10px] font-medium text-[#ede9fe] truncate max-w-[120px]" title={activeScene.audioTrack.name}>
+                                {activeScene.audioTrack.name}
+                              </span>
+                              <span className="text-[8px] font-mono text-[#c4b5fd]/80">
+                                {activeScene.audioTrack.duration.toFixed(1)}s
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-[8.5px] text-[#f43f5e] hover:text-[#fda4af] flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#4c0519]/50 transition-colors"
+                              onClick={() => removeAudioTrack(activeScene.id)}
+                              title="Remove audio track"
+                              data-testid="button-inspector-remove-audio"
+                            >
+                              <Trash2 size={10} />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+
+                          {/* Waveform visual */}
+                          <div className="h-6 w-full bg-[#0d0a17] border border-[#2e1065] rounded px-1 flex items-center overflow-hidden">
+                            <svg className="w-full h-4" preserveAspectRatio="none" viewBox={`0 0 ${activeScene.audioTrack.waveformData?.length || 100} 24`}>
+                              {(activeScene.audioTrack.waveformData || []).map((peak, idx) => {
+                                const barHeight = Math.max(2, peak * 22);
+                                const y = (24 - barHeight) / 2;
+                                return (
+                                  <rect
+                                    key={idx}
+                                    x={idx}
+                                    y={y}
+                                    width="0.85"
+                                    height={barHeight}
+                                    fill={activeScene.audioTrack?.muted ? "#64748b" : "#c4b5fd"}
+                                    rx="0.3"
+                                  />
+                                );
+                              })}
+                            </svg>
+                          </div>
+
+                          {/* Volume & Mute */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between text-[8.5px] text-[#9ca3af]">
+                              <span className="flex items-center gap-1">
+                                <Volume2 size={10} className="text-[#a78bfa]" />
+                                <span>Volume</span>
+                              </span>
+                              <span className="font-mono text-[#ede9fe]">
+                                {activeScene.audioTrack.muted ? "Muted" : `${Math.round((activeScene.audioTrack.volume ?? 1) * 100)}%`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                className={`p-1 rounded border transition-colors ${
+                                  activeScene.audioTrack.muted
+                                    ? "bg-rose-950/60 border-rose-800 text-rose-300"
+                                    : "bg-[#2e1065]/60 border-[#5b21b6] text-[#c4b5fd] hover:text-white"
+                                }`}
+                                onClick={() =>
+                                  updateAudioTrack(activeScene.id, {
+                                    muted: !activeScene.audioTrack?.muted,
+                                  })
+                                }
+                                title={activeScene.audioTrack.muted ? "Unmute" : "Mute"}
+                                data-testid="button-inspector-mute-audio"
+                              >
+                                {activeScene.audioTrack.muted ? <VolumeX size={11} /> : <Volume2 size={11} />}
+                              </button>
+                              <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.05"
+                                className="flex-1 accent-[#8b5cf6] h-[3px] cursor-pointer"
+                                value={activeScene.audioTrack.volume ?? 1}
+                                disabled={activeScene.audioTrack.muted}
+                                onChange={(e) =>
+                                  updateAudioTrack(activeScene.id, {
+                                    volume: parseFloat(e.target.value),
+                                  })
+                                }
+                                data-testid="input-inspector-audio-volume"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Offset Frames for Beat Sync */}
+                          <div>
+                            <div className="flex items-center justify-between text-[8.5px] text-[#9ca3af] mb-1">
+                              <span>Sync Offset (Frames)</span>
+                              <span className="font-mono text-[#c4b5fd]">
+                                {activeScene.audioTrack.offsetFrames > 0
+                                  ? `+${activeScene.audioTrack.offsetFrames}`
+                                  : activeScene.audioTrack.offsetFrames}f (
+                                {((activeScene.audioTrack.offsetFrames || 0) / (activeScene.fps || 30)).toFixed(2)}s)
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                className="text-input font-mono text-[9px] h-6"
+                                value={activeScene.audioTrack.offsetFrames || 0}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  updateAudioTrack(activeScene.id, {
+                                    offsetFrames: isNaN(val) ? 0 : val,
+                                  });
+                                }}
+                                data-testid="input-inspector-audio-offset"
+                              />
+                              <button
+                                type="button"
+                                className="px-2 py-1 bg-[#201c33] hover:bg-[#2e264d] text-[#c4b5fd] border border-[#3b3164] rounded text-[8.5px] transition-colors"
+                                onClick={() => updateAudioTrack(activeScene.id, { offsetFrames: 0 })}
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="p-3 bg-[#13101c] border border-[#271d3d] rounded-md text-center">
+                          <Music size={20} className="text-[#7c3aed] mx-auto mb-1.5 opacity-80" />
+                          <p className="text-[9px] text-[#a1a1aa] mb-2">
+                            No soundtrack imported. Add an MP3 or WAV file to sync motion animations to music beats.
+                          </p>
+                          <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#6d28d9] hover:bg-[#7c3aed] text-white text-[9px] font-medium transition-colors shadow-sm">
+                            <Plus size={10} />
+                            <span>Import Audio</span>
+                            <input
+                              type="file"
+                              accept="audio/*"
+                              className="hidden"
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0];
+                                if (file && activeScene) {
+                                  try {
+                                    const decoded = await decodeAudioFile(file);
+                                    setAudioTrack(activeScene.id, {
+                                      id: `audio-${Date.now()}`,
+                                      name: file.name.replace(/\.[^/.]+$/, ""),
+                                      url: decoded.url,
+                                      duration: decoded.duration,
+                                      volume: 1,
+                                      muted: false,
+                                      offsetFrames: 0,
+                                      waveformData: decoded.waveformData,
+                                    });
+                                  } catch (err) {
+                                    console.warn("Failed to load audio file:", err);
+                                  }
+                                }
+                              }}
+                            />
+                          </label>
+                        </div>
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 </Accordion>

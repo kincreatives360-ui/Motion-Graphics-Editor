@@ -20,6 +20,7 @@ import {
   createLiquidGlassShaderMaterial,
   type LayerGeometryInfo,
 } from "./R3FLayerEffectsMaterials";
+import { R3FDeviceMockupMesh } from "./R3FDeviceMockupMesh";
 
 export interface R3FLayerMeshProps {
   layer: Layer;
@@ -344,6 +345,17 @@ export function R3FLayerMesh({
       rotation={rotation}
       scale={[layer.transform.flipX ? -1 : 1, layer.transform.flipY ? -1 : 1, 1]}
     >
+    <group position={position} rotation={rotation}>
+      {/* 3D Realistic Device Enclosure (iPhone 16 Pro, MacBook Pro, Safari Browser) */}
+      {layer.mockup && layer.mockup !== "none" && (
+        <R3FDeviceMockupMesh
+          mockup={layer.mockup}
+          width={width}
+          height={height}
+          opacity={opacity}
+        />
+      )}
+
       {/* 1. Backdrop Blur Pass (composited behind layer) */}
       {backdropBlurEffect && (
         <BackdropBlurMesh geo={geoInfo} effect={backdropBlurEffect} />

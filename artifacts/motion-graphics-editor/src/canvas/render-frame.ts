@@ -371,7 +371,7 @@ export function drawDeviceMockup(
       ctx.roundRect(-baseW / 2, height / 2 + bezel / 2, baseW, baseH, [0, 0, 6, 6]);
       ctx.fill();
     }
-  } else if (type === "safari") {
+  } else if (type === "safari" || (type as string) === "browser") {
     // Modern Browser Header
     const barH = 34;
     ctx.fillStyle = "#1e2025";
