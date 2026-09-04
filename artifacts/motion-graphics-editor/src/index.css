@@ -1,13 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Ensure immediate text rendering during font load */
-@layer base {
-  @font-face {
-    font-display: swap;
-  }
-}
-
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

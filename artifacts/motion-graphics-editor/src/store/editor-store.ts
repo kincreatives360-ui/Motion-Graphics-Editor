@@ -26,6 +26,142 @@ export interface Transform {
   depth: number; // 0 = camera plane, positive = further away
 }
 
+export type LayerEffectType =
+  | "dropShadow"
+  | "glow"
+  | "backdropBlur"
+  | "layerBlur"
+  | "liquidGlass";
+
+export interface LayerEffectBase {
+  id: string;
+  type: LayerEffectType;
+  enabled: boolean;
+  visible: boolean;
+}
+
+export interface DropShadowLayerEffect extends LayerEffectBase {
+  type: "dropShadow";
+  offsetX: number; // px, default 4
+  offsetY: number; // px, default 4
+  blur: number;    // >= 0, default 12
+  color: string;   // hex, default "#000000"
+  opacity: number; // 0–1, default 0.5
+}
+
+export interface GlowLayerEffect extends LayerEffectBase {
+  type: "glow";
+  color: string;      // hex, default matching codebase accent color (#6e6ef5)
+  blur: number;       // >= 0, default 16
+  intensity: number;  // >= 0, default 1
+  angle: number;      // degrees, default 0
+  sheen: number;      // 0–1, default 0
+  mode: "edge" | "fill"; // default "edge"
+  blend: "add" | "normal"; // default "add"
+  rim: number;        // 0–1, default 0
+  thickness: number;  // 0–1, default 0.3
+}
+
+export interface BackdropBlurLayerEffect extends LayerEffectBase {
+  type: "backdropBlur";
+  blur: number; // >= 0, default 8
+}
+
+export interface LayerBlurLayerEffect extends LayerEffectBase {
+  type: "layerBlur";
+  blur: number; // >= 0, default 8
+  mode: "uniform" | "progressive"; // default "uniform"
+  endBlur: number; // >= 0, default 16, meaningful only in progressive mode
+  angle: number; // degrees, default 270, matching the reference doc's default
+}
+
+export interface LiquidGlassLayerEffect extends LayerEffectBase {
+  type: "liquidGlass";
+  blur: number;       // >= 0, default 8
+  refraction: number; // 0–1, default 0.3
+  dispersion: number; // 0–1, default 0.1
+  highlight: number;  // 0–1, default 0.4
+}
+
+export type LayerEffect =
+  | DropShadowLayerEffect
+  | GlowLayerEffect
+  | BackdropBlurLayerEffect
+  | LayerBlurLayerEffect
+  | LiquidGlassLayerEffect;
+
+export function createDefaultLayerEffect(type: LayerEffectType): LayerEffect {
+  const base = {
+    id: `lfx-${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    enabled: true,
+    visible: true,
+  };
+  switch (type) {
+    case "dropShadow":
+      return {
+        ...base,
+        type: "dropShadow",
+        offsetX: 4,
+        offsetY: 4,
+        blur: 12,
+        color: "#000000",
+        opacity: 0.5,
+      };
+    case "glow":
+      return {
+        ...base,
+        type: "glow",
+        color: "#6e6ef5",
+        blur: 16,
+        intensity: 1,
+        angle: 0,
+        sheen: 0,
+        mode: "edge",
+        blend: "add",
+        rim: 0,
+        thickness: 0.3,
+      };
+    case "backdropBlur":
+      return {
+        ...base,
+        type: "backdropBlur",
+        blur: 8,
+      };
+    case "layerBlur":
+      return {
+        ...base,
+        type: "layerBlur",
+        blur: 8,
+        mode: "uniform",
+        endBlur: 16,
+        angle: 270,
+      };
+    case "liquidGlass":
+      return {
+        ...base,
+        type: "liquidGlass",
+        blur: 8,
+        refraction: 0.3,
+        dispersion: 0.1,
+        highlight: 0.4,
+      };
+    default:
+      return { ...base, type } as LayerEffect;
+  }
+}
+
+export function isLayerEffectAvailable(
+  layer: Layer,
+  type: LayerEffectType,
+): boolean {
+  if (type === "layerBlur") {
+    const hasDepth = (layer.transform?.depth ?? 0) > 0;
+    const hasMockup = Boolean(layer.mockup && layer.mockup !== "none");
+    if (hasDepth || hasMockup) return false;
+  }
+  return true;
+}
+
 export interface Layer {
   id: string;
   parentId: string | null; // for grouping
@@ -36,23 +172,14 @@ export interface Layer {
   visible: boolean;
   locked: boolean;
   mockup?: MockupType;
-  mockupFrame?: "iphone" | "ipad" | "macbook" | "browser";
-  depth?: number;
-  material?: "matte" | "clay" | "glossy" | "metal" | "image";
-  materialSrc?: string;
-  materialStrength?: number;
-  layerEffects?: LayerEffectsSettings;
-  audioEffects?: AudioEffectsSettings;
+  effects: LayerEffect[];
+  effectsOrder: string[];
   // type-specific payload, keep it a discriminated union on `type`
   shape?: {
     kind: "rect" | "ellipse" | "path";
     fill: string;
     stroke?: string;
     strokeWidth?: number;
-    strokeAlign?: "inside" | "center" | "outside";
-    strokeStyle?: "solid" | "dashed";
-    dash?: number;
-    flow?: number;
     radius?: number;
     path?: string; // raw SVG path data
     pathOriginX?: number;
@@ -92,7 +219,6 @@ export interface Camera {
   fov: number; // degrees
   focalLengthMm?: number; // 24, 35, 50, 85 mm
   apertureFStop?: number; // 1.4, 2.0, 2.8, 5.6, 11
-  aperture?: number; // alias for apertureFStop
   focusDistance: number; // for depth of field
   target?: { x: number; y: number; z: number }; // orbit anchor point
 }
@@ -106,6 +232,7 @@ export interface SceneLighting {
   shadowOpacity: number;
 }
 
+// Legacy compat aliases (will be removed when canvas post-processing migration lands in later prompt)
 export interface OpticsSettings {
   chromaticAberration: number; // 0 to 1
   filmGrain: number; // 0 to 1
@@ -119,199 +246,147 @@ export interface BloomSettings {
   blurPx: number;    // diffusion blur radius
 }
 
-// Canonical Scene Effects Keys (order G8 from spec)
-export const CANONICAL_SCENE_EFFECTS = [
-  "depthOfField",
-  "bloom",
-  "vignette",
-  "motionBlur",
-  "chromaticAberration",
-  "filmGrain",
-  "ghost",
-  "colorGrade",
-  "edgeFade",
-  "glitch",
-] as const;
+export type SceneEffectType =
+  | "bloom"
+  | "vignette"
+  | "filmGrain"
+  | "chromaticAberration"
+  | "depthOfField"
+  | "motionBlur"
+  | "colorGrade"
+  | "ghost"
+  | "glitch"
+  | "edgeFade";
 
-export type SceneEffectKey = typeof CANONICAL_SCENE_EFFECTS[number];
-
-export interface SceneEffectsSettings {
-  depthOfField?: {
-    enabled?: boolean;
-    bokehScale?: number;
-    aperture?: number; // 0.7 to 22
-    focusRange?: number;
-  };
-  bloom?: {
-    enabled?: boolean;
-    intensity?: number;
-    threshold?: number; // 0 to 1
-  };
-  vignette?: {
-    enabled?: boolean;
-    intensity?: number; // 0 to 1
-  };
-  motionBlur?: {
-    enabled?: boolean;
-    shutterAngle?: number; // 0 to 360
-    samples?: number; // 1 to 32
-  };
-  chromaticAberration?: { // UI label: Color split
-    enabled?: boolean;
-    offset?: number; // 0 to 20
-  };
-  filmGrain?: {
-    enabled?: boolean;
-    intensity?: number; // 0 to 1
-    size?: number; // 0.5 to 3
-  };
-  ghost?: {
-    enabled?: boolean;
-    opacity?: number; // 0 to 1
-    offset?: number; // 0 to 30
-    blur?: number; // 0 to 10
-  };
-  colorGrade?: {
-    enabled?: boolean;
-    exposure?: number; // -2 to 2
-    contrast?: number; // 0 to 2
-    saturation?: number; // 0 to 2
-  };
-  edgeFade?: {
-    enabled?: boolean;
-    top?: number; // 0 to 1
-    right?: number; // 0 to 1
-    bottom?: number; // 0 to 1
-    left?: number; // 0 to 1
-  };
-  glitch?: {
-    enabled?: boolean;
-    intensity?: number; // 0 to 1
-    speed?: number; // 0.5 to 3
-  };
-  effectsOrder?: SceneEffectKey[];
-}
-
-// Canonical Layer Effects Keys (order Xj from spec)
-export const CANONICAL_LAYER_EFFECTS = [
-  "dropShadow",
-  "glow",
-  "backdropBlur",
-  "layerBlur",
-  "liquidGlass",
-] as const;
-
-export type LayerEffectKey = typeof CANONICAL_LAYER_EFFECTS[number];
-
-export interface LayerEffectsSettings {
-  dropShadow?: {
-    enabled?: boolean;
-    offsetX?: number;
-    offsetY?: number;
-    blur?: number;
-    color?: string;
-    opacity?: number; // 0 to 1
-  };
-  glow?: {
-    enabled?: boolean;
-    color?: string;
-    blur?: number;
-    intensity?: number;
-    angle?: number;
-    sheen?: number; // 0 to 1
-    mode?: "edge" | "fill";
-    blend?: "add" | "normal";
-    rim?: number; // 0 to 1
-    thickness?: number; // 0 to 1
-  };
-  backdropBlur?: {
-    enabled?: boolean;
-    blur?: number;
-  };
-  layerBlur?: {
-    enabled?: boolean;
-    blur?: number;
-    mode?: "uniform" | "progressive";
-    endBlur?: number;
-    angle?: number;
-  };
-  liquidGlass?: {
-    enabled?: boolean;
-    blur?: number;
-    refraction?: number; // 0 to 1
-    dispersion?: number; // 0 to 1
-    highlight?: number; // 0 to 1
-  };
-  layerEffectsOrder?: LayerEffectKey[];
-}
-
-// Canonical Audio Effects Keys (order $j from spec)
-export const CANONICAL_AUDIO_EFFECTS = [
-  "eq",
-  "filter",
-  "compressor",
-  "distortion",
-  "delay",
-  "reverb",
-] as const;
-
-export type AudioEffectKey = typeof CANONICAL_AUDIO_EFFECTS[number];
-
-export interface EQBand {
-  type: "highpass" | "lowshelf" | "peaking" | "highshelf" | "lowpass";
-  freqHz: number; // 20 to 20000
-  gainDb: number; // -24 to 24
-  q: number; // 0.1 to 18
-}
-
-export interface AudioEffectsSettings {
-  eq?: {
-    enabled?: boolean;
-    bands?: EQBand[];
-  };
-  filter?: {
-    enabled?: boolean;
-    highpassHz?: number; // 20 to 20000
-    lowpassHz?: number; // 20 to 20000
-  };
-  compressor?: {
-    enabled?: boolean;
-    thresholdDb?: number; // -60 to 0
-    ratio?: number; // 1 to 20
-    attackMs?: number; // 0.1 to 250
-    releaseMs?: number; // 10 to 1000
-    makeupDb?: number; // 0 to 24
-    sidechainAssetId?: string;
-  };
-  distortion?: {
-    enabled?: boolean;
-    style?: "tape" | "tube" | "console" | "fuzz";
-    drive?: number; // 0 to 1
-    toneHz?: number; // 1000 to 20000
-    mix?: number; // 0 to 1
-  };
-  delay?: {
-    enabled?: boolean;
-    timeMs?: number; // 20 to 2000
-    feedback?: number; // 0 to 0.9
-    mix?: number; // 0 to 1
-    sync?: "quarter" | "dottedEighth" | "eighth" | "tripletEighth" | "sixteenth";
-    toneHz?: number; // 200 to 20000
-    pingPong?: boolean;
-  };
-  reverb?: {
-    enabled?: boolean;
-    preset?: "room" | "hall" | "plate" | "cavern";
-    mix?: number; // 0 to 1
-  };
-  effectsOrder?: AudioEffectKey[];
-}
-
-export interface EffectPreset {
+export interface SceneEffectBase {
   id: string;
-  name: string;
-  category?: string;
-  sceneEffects: SceneEffectsSettings;
+  type: SceneEffectType;
+  enabled: boolean;
+  visible: boolean;
+}
+
+export interface BloomEffect extends SceneEffectBase {
+  type: "bloom";
+  intensity: number; // >= 0, default 1.0
+  threshold: number; // 0 to 1, default ~0.78
+}
+
+export interface VignetteEffect extends SceneEffectBase {
+  type: "vignette";
+  intensity: number; // 0 to 1, default 0.15
+}
+
+export interface FilmGrainEffect extends SceneEffectBase {
+  type: "filmGrain";
+  intensity: number; // 0 to 1, default 0.08
+  size: number;      // 0.5 to 3, default 1.0
+}
+
+export interface ChromaticAberrationEffect extends SceneEffectBase {
+  type: "chromaticAberration";
+  offset: number;    // 0 to 20, default 2
+}
+
+export interface DepthOfFieldEffect extends SceneEffectBase {
+  type: "depthOfField";
+  /** Bokeh shape scale — >= 0, default 1 */
+  bokehScale: number;
+  /** Simulated aperture f-stop — 0.7–22, default 2.8 */
+  aperture: number;
+  /** Z-distance range around focus point that stays sharp — >= 0, default 200 */
+  focusRange: number;
+}
+
+export interface MotionBlurEffect extends SceneEffectBase {
+  type: "motionBlur";
+  /** Degrees of shutter rotation per frame — 0–360, default 180 */
+  shutterAngle: number;
+  /** Accumulation sample count — integer, default 8 */
+  samples: number;
+}
+
+export interface ColorGradeEffect extends SceneEffectBase {
+  type: "colorGrade";
+  /** EV exposure offset — -2 to 2, default 0 */
+  exposure: number;
+  /** Contrast multiplier — 0 to 2, default 1 */
+  contrast: number;
+  /** Saturation multiplier — 0 to 2, default 1 */
+  saturation: number;
+}
+
+export interface GhostEffect extends SceneEffectBase {
+  type: "ghost";
+  /** Alpha of the ghost duplicate — 0 to 1, default 0.4 */
+  opacity: number;
+  /** Pixel offset of the ghost — 0–30, default 8 */
+  offset: number;
+  /** Gaussian blur on the ghost — 0–10, default 2 */
+  blur: number;
+}
+
+export interface GlitchEffect extends SceneEffectBase {
+  type: "glitch";
+  /** Overall glitch strength — 0 to 1, default 0.3 */
+  intensity: number;
+  /** Animation speed multiplier — 0.5–3, default 1 */
+  speed: number;
+}
+
+export interface EdgeFadeEffect extends SceneEffectBase {
+  type: "edgeFade";
+  /** Top-edge fade extent — 0 to 1, default 0 */
+  top: number;
+  /** Right-edge fade extent — 0 to 1, default 0 */
+  right: number;
+  /** Bottom-edge fade extent — 0 to 1, default 0 */
+  bottom: number;
+  /** Left-edge fade extent — 0 to 1, default 0 */
+  left: number;
+}
+
+export type SceneEffect =
+  | BloomEffect
+  | VignetteEffect
+  | FilmGrainEffect
+  | ChromaticAberrationEffect
+  | DepthOfFieldEffect
+  | MotionBlurEffect
+  | ColorGradeEffect
+  | GhostEffect
+  | GlitchEffect
+  | EdgeFadeEffect;
+
+export function createDefaultSceneEffect(type: SceneEffectType): SceneEffect {
+  const base = {
+    id: `fx-${type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    enabled: true,
+    visible: true,
+  };
+  switch (type) {
+    case "bloom":
+      return { ...base, type: "bloom", intensity: 1.0, threshold: 0.78 };
+    case "vignette":
+      return { ...base, type: "vignette", intensity: 0.15 };
+    case "filmGrain":
+      return { ...base, type: "filmGrain", intensity: 0.08, size: 1.0 };
+    case "chromaticAberration":
+      return { ...base, type: "chromaticAberration", offset: 2 };
+    case "depthOfField":
+      return { ...base, type: "depthOfField", bokehScale: 1, aperture: 2.8, focusRange: 200 };
+    case "motionBlur":
+      return { ...base, type: "motionBlur", shutterAngle: 180, samples: 8 };
+    case "colorGrade":
+      return { ...base, type: "colorGrade", exposure: 0, contrast: 1, saturation: 1 };
+    case "ghost":
+      return { ...base, type: "ghost", opacity: 0.4, offset: 8, blur: 2 };
+    case "glitch":
+      return { ...base, type: "glitch", intensity: 0.3, speed: 1 };
+    case "edgeFade":
+      return { ...base, type: "edgeFade", top: 0, right: 0, bottom: 0, left: 0 };
+    default:
+      return { ...base, type } as SceneEffect;
+  }
 }
 
 export interface Scene {
@@ -323,7 +398,8 @@ export interface Scene {
   animationBlocks: AnimationBlock[];
   camera: Camera;
   lighting?: SceneLighting;
-  sceneEffects?: SceneEffectsSettings;
+  effects: SceneEffect[];
+  effectsOrder: string[];
 }
 
 export interface EditorDocument {
@@ -332,10 +408,7 @@ export interface EditorDocument {
   scenes: Scene[];
   activeSceneId: string;
   selectedLayerIds: string[];
-  bloom?: BloomSettings;
-  optics?: OpticsSettings;
   assets?: ProjectAsset[];
-  effectPresets?: EffectPreset[];
 }
 
 export type SaveStatus = "idle" | "saving" | "saved";
@@ -357,7 +430,6 @@ export interface EditorStoreState extends EditorDocument {
   setAspectRatio: (ratio: "16:9" | "9:16" | "1:1") => void;
   setProjectName: (name: string) => void;
   hydrateDocument: (doc: Partial<EditorDocument>) => void;
-  updateBloom: (partial: Partial<BloomSettings>) => void;
   addAsset: (
     asset: Omit<ProjectAsset, "id" | "createdAt"> & {
       id?: string;
@@ -385,7 +457,34 @@ export interface EditorStoreState extends EditorDocument {
   updateCamera: (partial: Partial<Camera>, sceneId?: string) => void;
   resetCamera: (sceneId?: string) => void;
   updateSceneLighting: (partial: Partial<SceneLighting>, sceneId?: string) => void;
-  updateOptics: (partial: Partial<OpticsSettings>) => void;
+  addSceneEffect: (sceneId: string | undefined, type: SceneEffectType) => string;
+  updateSceneEffect: (
+    sceneId: string | undefined,
+    effectId: string,
+    partial: Partial<SceneEffect>,
+  ) => void;
+  removeSceneEffect: (sceneId: string | undefined, effectId: string) => void;
+  toggleSceneEffectVisible: (sceneId: string | undefined, effectId: string) => void;
+  reorderSceneEffects: (sceneId: string | undefined, newOrder: string[]) => void;
+  replaceSceneEffectType: (
+    sceneId: string | undefined,
+    effectId: string,
+    newType: SceneEffectType,
+  ) => void;
+  addLayerEffect: (layerId: string, type: LayerEffectType) => string;
+  updateLayerEffect: (
+    layerId: string,
+    effectId: string,
+    partial: Partial<LayerEffect>,
+  ) => void;
+  removeLayerEffect: (layerId: string, effectId: string) => void;
+  toggleLayerEffectVisible: (layerId: string, effectId: string) => void;
+  reorderLayerEffects: (layerId: string, newOrder: string[]) => void;
+  replaceLayerEffectType: (
+    layerId: string,
+    effectId: string,
+    newType: LayerEffectType,
+  ) => void;
   addAnimationBlock: (
     sceneId: string | undefined,
     block: Omit<AnimationBlock, "id"> & { id?: string },
@@ -416,27 +515,6 @@ export interface EditorStoreState extends EditorDocument {
   ) => void;
   applyAnimationPreset: (preset: AnimationPreset) => void;
   applySceneTemplate: (template: SceneTemplate, mode: "new" | "merge") => string;
-  updateSceneEffects: (sceneId: string | undefined, partial: Partial<SceneEffectsSettings>) => void;
-  addSceneEffect: (sceneId: string | undefined, key: SceneEffectKey) => void;
-  removeSceneEffect: (sceneId: string | undefined, key: SceneEffectKey) => void;
-  swapSceneEffect: (sceneId: string | undefined, oldKey: SceneEffectKey, newKey: SceneEffectKey) => void;
-  reorderSceneEffects: (sceneId: string | undefined, newOrder: SceneEffectKey[]) => void;
-
-  updateLayerEffects: (layerId: string, partial: Partial<LayerEffectsSettings>) => void;
-  addLayerEffect: (layerId: string, key: LayerEffectKey) => void;
-  removeLayerEffect: (layerId: string, key: LayerEffectKey) => void;
-  swapLayerEffect: (layerId: string, oldKey: LayerEffectKey, newKey: LayerEffectKey) => void;
-  reorderLayerEffects: (layerId: string, newOrder: LayerEffectKey[]) => void;
-
-  updateAudioEffects: (layerId: string, partial: Partial<AudioEffectsSettings>) => void;
-  addAudioEffect: (layerId: string, key: AudioEffectKey) => void;
-  removeAudioEffect: (layerId: string, key: AudioEffectKey) => void;
-  swapAudioEffect: (layerId: string, oldKey: AudioEffectKey, newKey: AudioEffectKey) => void;
-  reorderAudioEffects: (layerId: string, newOrder: AudioEffectKey[]) => void;
-
-  saveEffectPreset: (preset: Omit<EffectPreset, "id">) => string;
-  removeEffectPreset: (id: string) => void;
-  applyEffectPreset: (sceneId: string | undefined, presetId: string) => void;
 }
 
 export interface EditorUIStoreState {
@@ -491,6 +569,8 @@ const initialScene: Scene = {
       opacity: 0.9,
       visible: true,
       locked: false,
+      effects: [],
+      effectsOrder: [],
       shape: {
         kind: "rect",
         fill: "#1e293b",
@@ -515,6 +595,8 @@ const initialScene: Scene = {
       opacity: 1,
       visible: true,
       locked: false,
+      effects: [],
+      effectsOrder: [],
       shape: {
         kind: "rect",
         fill: "#0284c7",
@@ -546,6 +628,8 @@ const initialScene: Scene = {
     shadowBlur: 24,
     shadowOpacity: 0.35,
   },
+  effects: [],
+  effectsOrder: [],
 };
 
 const initialDocument: EditorDocument = {
@@ -555,17 +639,6 @@ const initialDocument: EditorDocument = {
   activeSceneId: initialSceneId,
   selectedLayerIds: [],
   assets: [],
-  bloom: {
-    enabled: false,
-    threshold: 200,
-    intensity: 1.0,
-    blurPx: 16,
-  },
-  optics: {
-    chromaticAberration: 0,
-    filmGrain: 0.08,
-    vignette: 0.15,
-  },
 };
 
 export const useEditorStore = create<EditorStoreState>()(
@@ -646,13 +719,15 @@ export const useEditorStore = create<EditorStoreState>()(
           ...layer,
           id: idMap.get(layer.id)!,
           parentId: layer.parentId && idMap.has(layer.parentId) ? idMap.get(layer.parentId)! : null,
+          effects: layer.effects ? [...layer.effects] : [],
+          effectsOrder: layer.effectsOrder ? [...layer.effectsOrder] : (layer.effects ? layer.effects.map((e) => e.id) : []),
         }));
 
         const remappedBlocks: AnimationBlock[] = template.animationBlocks.map((block) => ({
           ...block,
           id: `anim-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           layerId: block.layerId && idMap.has(block.layerId) ? idMap.get(block.layerId)! : (block.layerId ? null : null),
-        })) as AnimationBlock[];
+        }));
 
         if (mode === "new") {
           const newSceneId = `scene-${Date.now()}`;
@@ -670,6 +745,8 @@ export const useEditorStore = create<EditorStoreState>()(
             },
             layers: remappedLayers,
             animationBlocks: remappedBlocks,
+            effects: (template as any).effects || [],
+            effectsOrder: (template as any).effectsOrder || ((template as any).effects ? (template as any).effects.map((e: any) => e.id) : []),
           };
 
           set((s) => ({
@@ -708,46 +785,116 @@ export const useEditorStore = create<EditorStoreState>()(
         set({ projectName: name });
       },
 
-      updateBloom: (partial) => {
-        set((state) => ({
-          bloom: {
-            ...(state.bloom || {
-              enabled: false,
-              threshold: 200,
-              intensity: 1.0,
-              blurPx: 16,
-            }),
-            ...partial,
-          },
-        }));
-      },
-
       hydrateDocument: (doc) => {
-        set((state) => ({
-          ...state,
-          ...doc,
-          projectName: doc.projectName ?? state.projectName,
-          aspectRatio: doc.aspectRatio ?? state.aspectRatio,
-          bloom: doc.bloom ?? state.bloom,
-          scenes:
-            doc.scenes && doc.scenes.length > 0
-              ? doc.scenes.map((s) => ({
-                  ...s,
-                  animationBlocks: (s.animationBlocks || []).map((b) => ({
-                    ...b,
-                    preset:
-                      typeof b.preset === "string"
-                        ? b.preset
-                        : (b.preset as any)?.id || "fade-in",
-                  })),
-                }))
-              : state.scenes,
-          activeSceneId:
-            doc.activeSceneId ??
-            (doc.scenes && doc.scenes.length > 0 ? doc.scenes[0].id : state.activeSceneId),
-          selectedLayerIds: [],
-          assets: doc.assets ?? state.assets ?? [],
-        }));
+        set((state) => {
+          const rawDoc = doc as any;
+          const legacyBloom: BloomSettings | undefined = rawDoc.bloom;
+          const legacyOptics: OpticsSettings | undefined = rawDoc.optics;
+
+          // Process scenes and perform one-time migration of legacy doc.bloom/optics into scene.effects
+          const scenesSource = doc.scenes && doc.scenes.length > 0 ? doc.scenes : state.scenes;
+          const migratedScenes = scenesSource.map((s) => {
+            let effects = s.effects ? [...s.effects] : [];
+            let effectsOrder = s.effectsOrder ? [...s.effectsOrder] : [];
+
+            // If this scene doesn't already have effects migrated and legacy doc settings exist:
+            if (effects.length === 0) {
+              if (legacyBloom && (legacyBloom.enabled || (legacyBloom.intensity ?? 0) > 0)) {
+                const bloomFx: BloomEffect = {
+                  id: `fx-bloom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                  type: "bloom",
+                  enabled: legacyBloom.enabled ?? true,
+                  visible: true,
+                  intensity: legacyBloom.intensity ?? 1.0,
+                  threshold: (legacyBloom.threshold ?? 200) / 255,
+                };
+                effects.push(bloomFx);
+                effectsOrder.push(bloomFx.id);
+              }
+
+              if (legacyOptics) {
+                if ((legacyOptics.vignette ?? 0) > 0) {
+                  const vignetteFx: VignetteEffect = {
+                    id: `fx-vignette-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    type: "vignette",
+                    enabled: true,
+                    visible: true,
+                    intensity: legacyOptics.vignette,
+                  };
+                  effects.push(vignetteFx);
+                  effectsOrder.push(vignetteFx.id);
+                }
+
+                if ((legacyOptics.filmGrain ?? 0) > 0) {
+                  const grainFx: FilmGrainEffect = {
+                    id: `fx-filmGrain-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    type: "filmGrain",
+                    enabled: true,
+                    visible: true,
+                    intensity: legacyOptics.filmGrain,
+                    size: 1.0,
+                  };
+                  effects.push(grainFx);
+                  effectsOrder.push(grainFx.id);
+                }
+
+                if ((legacyOptics.chromaticAberration ?? 0) > 0) {
+                  const chromaFx: ChromaticAberrationEffect = {
+                    id: `fx-chromaticAberration-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                    type: "chromaticAberration",
+                    enabled: true,
+                    visible: true,
+                    offset: legacyOptics.chromaticAberration * 20,
+                  };
+                  effects.push(chromaFx);
+                  effectsOrder.push(chromaFx.id);
+                }
+              }
+            }
+
+            // Sync effectsOrder if missing any effect ids
+            for (const fx of effects) {
+              if (!effectsOrder.includes(fx.id)) {
+                effectsOrder.push(fx.id);
+              }
+            }
+
+            const normalizedLayers = (s.layers || []).map((l) => ({
+              ...l,
+              effects: l.effects ? [...l.effects] : [],
+              effectsOrder: l.effectsOrder
+                ? [...l.effectsOrder]
+                : (l.effects ? l.effects.map((e) => e.id) : []),
+            }));
+
+            return {
+              ...s,
+              layers: normalizedLayers,
+              effects,
+              effectsOrder,
+              animationBlocks: (s.animationBlocks || []).map((b) => ({
+                ...b,
+                preset:
+                  typeof b.preset === "string"
+                    ? b.preset
+                    : (b.preset as any)?.id || "fade-in",
+              })),
+            };
+          });
+
+          return {
+            ...state,
+            ...doc,
+            projectName: doc.projectName ?? state.projectName,
+            aspectRatio: doc.aspectRatio ?? state.aspectRatio,
+            scenes: migratedScenes,
+            activeSceneId:
+              doc.activeSceneId ??
+              (migratedScenes.length > 0 ? migratedScenes[0].id : state.activeSceneId),
+            selectedLayerIds: [],
+            assets: doc.assets ?? state.assets ?? [],
+          };
+        });
         useEditorUIStore.getState().setSaveStatus("saved");
       },
 
@@ -783,13 +930,20 @@ export const useEditorStore = create<EditorStoreState>()(
 
       addImportedLayers: (layers, selectIds) => {
         if (!layers.length) return;
+        const normalized = layers.map((l) => ({
+          ...l,
+          effects: l.effects ? [...l.effects] : [],
+          effectsOrder: l.effectsOrder
+            ? [...l.effectsOrder]
+            : (l.effects ? l.effects.map((e) => e.id) : []),
+        }));
         set((state) => ({
           scenes: state.scenes.map((sc) =>
             sc.id === state.activeSceneId
-              ? { ...sc, layers: [...sc.layers, ...layers] }
+              ? { ...sc, layers: [...sc.layers, ...normalized] }
               : sc,
           ),
-          selectedLayerIds: selectIds ?? [layers[0].id],
+          selectedLayerIds: selectIds ?? [normalized[0].id],
         }));
       },
 
@@ -821,6 +975,8 @@ export const useEditorStore = create<EditorStoreState>()(
           opacity: 1,
           visible: true,
           locked: false,
+          effects: layerOverride?.effects ? [...layerOverride.effects] : [],
+          effectsOrder: layerOverride?.effectsOrder ? [...layerOverride.effectsOrder] : [],
           ...(type === "shape"
             ? { shape: { kind: "rect", fill: "#38bdf8", stroke: "#0284c7" } }
             : type === "text"
@@ -1033,6 +1189,8 @@ export const useEditorStore = create<EditorStoreState>()(
           opacity: 1,
           visible: true,
           locked: false,
+          effects: [],
+          effectsOrder: [],
         };
 
         // First index among selected layers
@@ -1098,6 +1256,12 @@ export const useEditorStore = create<EditorStoreState>()(
         const clonedLayers: Layer[] = layersToDuplicate.map((l) => {
           const newId = idMap.get(l.id)!;
           const newParentId = l.parentId && idMap.has(l.parentId) ? idMap.get(l.parentId)! : l.parentId;
+          const clonedEffects = (l.effects || []).map((fx) => ({
+            ...fx,
+            id: `lfx-${fx.type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          }));
+          const effectIdMap = new Map((l.effects || []).map((fx, i) => [fx.id, clonedEffects[i].id]));
+          const clonedOrder = (l.effectsOrder || []).map((id) => effectIdMap.get(id) || id);
           return {
             ...l,
             id: newId,
@@ -1108,6 +1272,8 @@ export const useEditorStore = create<EditorStoreState>()(
               x: l.transform.x + 10,
               y: l.transform.y + 10,
             },
+            effects: clonedEffects,
+            effectsOrder: clonedOrder,
           };
         });
 
@@ -1198,6 +1364,12 @@ export const useEditorStore = create<EditorStoreState>()(
           const newId = idMap.get(l.id)!;
           const newParentId =
             l.parentId && idMap.has(l.parentId) ? idMap.get(l.parentId)! : null;
+          const clonedEffects = (l.effects || []).map((fx) => ({
+            ...fx,
+            id: `lfx-${fx.type}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          }));
+          const effectIdMap = new Map((l.effects || []).map((fx, i) => [fx.id, clonedEffects[i].id]));
+          const clonedOrder = (l.effectsOrder || []).map((id) => effectIdMap.get(id) || id);
           return {
             ...l,
             id: newId,
@@ -1207,6 +1379,8 @@ export const useEditorStore = create<EditorStoreState>()(
               x: l.transform.x + 20,
               y: l.transform.y + 20,
             },
+            effects: clonedEffects,
+            effectsOrder: clonedOrder,
           };
         });
 
@@ -1254,6 +1428,8 @@ export const useEditorStore = create<EditorStoreState>()(
             fov: 60,
             focusDistance: 1000,
           },
+          effects: [],
+          effectsOrder: [],
           ...sceneOverride,
         };
 
@@ -1363,16 +1539,244 @@ export const useEditorStore = create<EditorStoreState>()(
         }));
       },
 
-      updateOptics: (partial) => {
+      addSceneEffect: (sceneId, type) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        const newEffect = createDefaultSceneEffect(type);
+
         set((state) => ({
-          optics: {
-            ...(state.optics || {
-              chromaticAberration: 0,
-              filmGrain: 0.08,
-              vignette: 0.15,
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            const currentEffects = scene.effects || [];
+            const currentOrder = scene.effectsOrder || currentEffects.map((e) => e.id);
+            return {
+              ...scene,
+              effects: [...currentEffects, newEffect],
+              effectsOrder: [...currentOrder, newEffect.id],
+            };
+          }),
+        }));
+
+        return newEffect.id;
+      },
+
+      updateSceneEffect: (sceneId, effectId, partial) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            return {
+              ...scene,
+              effects: (scene.effects || []).map((fx) =>
+                fx.id === effectId ? ({ ...fx, ...partial } as SceneEffect) : fx,
+              ),
+            };
+          }),
+        }));
+      },
+
+      removeSceneEffect: (sceneId, effectId) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            return {
+              ...scene,
+              effects: (scene.effects || []).filter((fx) => fx.id !== effectId),
+              effectsOrder: (scene.effectsOrder || []).filter((id) => id !== effectId),
+            };
+          }),
+        }));
+      },
+
+      toggleSceneEffectVisible: (sceneId, effectId) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            return {
+              ...scene,
+              effects: (scene.effects || []).map((fx) =>
+                fx.id === effectId ? { ...fx, visible: !fx.visible } : fx,
+              ),
+            };
+          }),
+        }));
+      },
+
+      reorderSceneEffects: (sceneId, newOrder) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            return {
+              ...scene,
+              effectsOrder: newOrder,
+            };
+          }),
+        }));
+      },
+
+      replaceSceneEffectType: (sceneId, effectId, newType) => {
+        const targetSceneId = sceneId || get().activeSceneId;
+        const freshDefault = createDefaultSceneEffect(newType);
+
+        set((state) => ({
+          scenes: state.scenes.map((scene) => {
+            if (scene.id !== targetSceneId) return scene;
+            return {
+              ...scene,
+              effects: (scene.effects || []).map((fx) => {
+                if (fx.id !== effectId) return fx;
+                return {
+                  ...freshDefault,
+                  id: fx.id,
+                  enabled: fx.enabled,
+                  visible: fx.visible,
+                };
+              }),
+            };
+          }),
+        }));
+      },
+
+      addLayerEffect: (layerId, type) => {
+        const state = get();
+        let targetLayer: Layer | undefined;
+        for (const s of state.scenes) {
+          const l = s.layers.find((ly) => ly.id === layerId);
+          if (l) {
+            targetLayer = l;
+            break;
+          }
+        }
+        if (targetLayer && !isLayerEffectAvailable(targetLayer, type)) {
+          return "";
+        }
+        const newEffect = createDefaultLayerEffect(type);
+
+        set((s) => ({
+          scenes: s.scenes.map((scene) => ({
+            ...scene,
+            layers: scene.layers.map((layer) => {
+              if (layer.id !== layerId) return layer;
+              const currentEffects = layer.effects || [];
+              const currentOrder =
+                layer.effectsOrder && layer.effectsOrder.length > 0
+                  ? layer.effectsOrder
+                  : currentEffects.map((e) => e.id);
+              return {
+                ...layer,
+                effects: [...currentEffects, newEffect],
+                effectsOrder: [...currentOrder, newEffect.id],
+              };
             }),
-            ...partial,
-          },
+          })),
+        }));
+
+        return newEffect.id;
+      },
+
+      updateLayerEffect: (layerId, effectId, partial) => {
+        set((state) => ({
+          scenes: state.scenes.map((scene) => ({
+            ...scene,
+            layers: scene.layers.map((layer) => {
+              if (layer.id !== layerId) return layer;
+              return {
+                ...layer,
+                effects: (layer.effects || []).map((fx) =>
+                  fx.id === effectId
+                    ? ({ ...fx, ...partial } as LayerEffect)
+                    : fx,
+                ),
+              };
+            }),
+          })),
+        }));
+      },
+
+      removeLayerEffect: (layerId, effectId) => {
+        set((state) => ({
+          scenes: state.scenes.map((scene) => ({
+            ...scene,
+            layers: scene.layers.map((layer) => {
+              if (layer.id !== layerId) return layer;
+              return {
+                ...layer,
+                effects: (layer.effects || []).filter((fx) => fx.id !== effectId),
+                effectsOrder: (layer.effectsOrder || []).filter((id) => id !== effectId),
+              };
+            }),
+          })),
+        }));
+      },
+
+      toggleLayerEffectVisible: (layerId, effectId) => {
+        set((state) => ({
+          scenes: state.scenes.map((scene) => ({
+            ...scene,
+            layers: scene.layers.map((layer) => {
+              if (layer.id !== layerId) return layer;
+              return {
+                ...layer,
+                effects: (layer.effects || []).map((fx) =>
+                  fx.id === effectId ? { ...fx, visible: !fx.visible } : fx,
+                ),
+              };
+            }),
+          })),
+        }));
+      },
+
+      reorderLayerEffects: (layerId, newOrder) => {
+        set((state) => ({
+          scenes: state.scenes.map((scene) => ({
+            ...scene,
+            layers: scene.layers.map((layer) => {
+              if (layer.id !== layerId) return layer;
+              return {
+                ...layer,
+                effectsOrder: newOrder,
+              };
+            }),
+          })),
+        }));
+      },
+
+      replaceLayerEffectType: (layerId, effectId, newType) => {
+        const state = get();
+        let targetLayer: Layer | undefined;
+        for (const s of state.scenes) {
+          const l = s.layers.find((ly) => ly.id === layerId);
+          if (l) {
+            targetLayer = l;
+            break;
+          }
+        }
+        if (targetLayer && !isLayerEffectAvailable(targetLayer, newType)) {
+          return;
+        }
+        const freshDefault = createDefaultLayerEffect(newType);
+
+        set((s) => ({
+          scenes: s.scenes.map((scene) => ({
+            ...scene,
+            layers: scene.layers.map((layer) => {
+              if (layer.id !== layerId) return layer;
+              return {
+                ...layer,
+                effects: (layer.effects || []).map((fx) => {
+                  if (fx.id !== effectId) return fx;
+                  return {
+                    ...freshDefault,
+                    id: fx.id,
+                    enabled: fx.enabled,
+                    visible: fx.visible,
+                  } as LayerEffect;
+                }),
+              };
+            }),
+          })),
         }));
       },
 
@@ -1448,8 +1852,8 @@ export const useEditorStore = create<EditorStoreState>()(
           easing: blockData.easing || "ease-in-out",
           customCurve: blockData.customCurve || [0.25, 0.1, 0.25, 1.0],
           cameraTo: isCameraBlock
-            ? (blockData as any).cameraTo || { x: 200, y: 0, z: 300, fov: 0 }
-            : (blockData as any).cameraTo,
+            ? blockData.cameraTo || { x: 200, y: 0, z: 300, fov: 0 }
+            : blockData.cameraTo,
         };
 
         set((state) => ({
@@ -1480,8 +1884,8 @@ export const useEditorStore = create<EditorStoreState>()(
 
                 if (isKeyframeTrack(updated as AnimationBlock)) {
                   const kfTrack = updated as KeyframeTrackBlock;
-                  if ((partial as any).keyframes) {
-                    const sorted = [...((partial as any).keyframes)].sort((k1, k2) => k1.frame - k2.frame);
+                  if (partial.keyframes) {
+                    const sorted = [...partial.keyframes].sort((k1, k2) => k1.frame - k2.frame);
                     kfTrack.keyframes = sorted;
                     if (sorted.length > 0) {
                       kfTrack.startFrame = sorted[0].frame;
@@ -1669,354 +2073,6 @@ export const useEditorStore = create<EditorStoreState>()(
           })),
         }));
       },
-      updateSceneEffects: (sceneId, partial) => {
-        const targetId = sceneId || get().activeSceneId;
-        set((state) => ({
-          scenes: state.scenes.map((scene) => {
-            if (scene.id !== targetId) return scene;
-            return {
-              ...scene,
-              sceneEffects: {
-                ...(scene.sceneEffects || {}),
-                ...partial,
-              },
-            };
-          }),
-        }));
-      },
-
-      addSceneEffect: (sceneId, key) => {
-        const targetId = sceneId || get().activeSceneId;
-        set((state) => ({
-          scenes: state.scenes.map((scene) => {
-            if (scene.id !== targetId) return scene;
-            const current = scene.sceneEffects || {};
-            const currentOrder = current.effectsOrder || [];
-            if (currentOrder.includes(key)) return scene;
-            const defaultParams: any = { enabled: true };
-            if (key === "bloom") { defaultParams.intensity = 1.0; defaultParams.threshold = 0.8; }
-            else if (key === "vignette") { defaultParams.intensity = 0.3; }
-            else if (key === "filmGrain") { defaultParams.intensity = 0.08; defaultParams.size = 1.0; }
-            else if (key === "depthOfField") { defaultParams.bokehScale = 2.0; defaultParams.aperture = 2.8; defaultParams.focusRange = 100; }
-            else if (key === "motionBlur") { defaultParams.shutterAngle = 180; defaultParams.samples = 16; }
-            else if (key === "chromaticAberration") { defaultParams.offset = 4; }
-            else if (key === "ghost") { defaultParams.opacity = 0.5; defaultParams.offset = 10; defaultParams.blur = 2; }
-            else if (key === "colorGrade") { defaultParams.exposure = 0; defaultParams.contrast = 1; defaultParams.saturation = 1; }
-            else if (key === "edgeFade") { defaultParams.top = 0.1; defaultParams.right = 0.1; defaultParams.bottom = 0.1; defaultParams.left = 0.1; }
-            else if (key === "glitch") { defaultParams.intensity = 0.3; defaultParams.speed = 1.0; }
-            return {
-              ...scene,
-              sceneEffects: {
-                ...current,
-                [key]: { ...defaultParams, ...(current[key] || {}) },
-                effectsOrder: [...currentOrder, key],
-              },
-            };
-          }),
-        }));
-      },
-
-      removeSceneEffect: (sceneId, key) => {
-        const targetId = sceneId || get().activeSceneId;
-        set((state) => ({
-          scenes: state.scenes.map((scene) => {
-            if (scene.id !== targetId || !scene.sceneEffects) return scene;
-            const { [key]: _, effectsOrder, ...rest } = scene.sceneEffects as any;
-            return {
-              ...scene,
-              sceneEffects: {
-                ...rest,
-                effectsOrder: (effectsOrder || []).filter((k: string) => k !== key),
-              },
-            };
-          }),
-        }));
-      },
-
-      swapSceneEffect: (sceneId, oldKey, newKey) => {
-        const targetId = sceneId || get().activeSceneId;
-        set((state) => ({
-          scenes: state.scenes.map((scene) => {
-            if (scene.id !== targetId || !scene.sceneEffects) return scene;
-            const current = scene.sceneEffects as any;
-            const order = current.effectsOrder || [];
-            const newOrder = order.map((k: string) => (k === oldKey ? newKey : k));
-            const { [oldKey]: oldVal, ...rest } = current;
-            const defaultParams: any = { enabled: true };
-            return {
-              ...scene,
-              sceneEffects: {
-                ...rest,
-                [newKey]: current[newKey] || defaultParams,
-                effectsOrder: newOrder,
-              },
-            };
-          }),
-        }));
-      },
-
-      reorderSceneEffects: (sceneId, newOrder) => {
-        const targetId = sceneId || get().activeSceneId;
-        set((state) => ({
-          scenes: state.scenes.map((scene) => {
-            if (scene.id !== targetId || !scene.sceneEffects) return scene;
-            return {
-              ...scene,
-              sceneEffects: {
-                ...scene.sceneEffects,
-                effectsOrder: newOrder,
-              },
-            };
-          }),
-        }));
-      },
-
-      updateLayerEffects: (layerId, partial) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId) return layer;
-              return {
-                ...layer,
-                layerEffects: {
-                  ...(layer.layerEffects || {}),
-                  ...partial,
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      addLayerEffect: (layerId, key) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId) return layer;
-              const current = layer.layerEffects || {};
-              const currentOrder = current.layerEffectsOrder || [];
-              if (currentOrder.includes(key)) return layer;
-              const defaultParams: any = { enabled: true };
-              if (key === "dropShadow") { defaultParams.offsetX = 4; defaultParams.offsetY = 8; defaultParams.blur = 16; defaultParams.color = "#000000"; defaultParams.opacity = 0.4; }
-              else if (key === "glow") { defaultParams.color = "#38bdf8"; defaultParams.blur = 20; defaultParams.intensity = 1.0; defaultParams.angle = 0; defaultParams.sheen = 0.5; defaultParams.mode = "fill"; defaultParams.blend = "add"; defaultParams.rim = 0.2; defaultParams.thickness = 0.1; }
-              else if (key === "backdropBlur") { defaultParams.blur = 12; }
-              else if (key === "layerBlur") { defaultParams.blur = 8; defaultParams.mode = "uniform"; defaultParams.endBlur = 0; defaultParams.angle = 270; }
-              else if (key === "liquidGlass") { defaultParams.blur = 16; defaultParams.refraction = 0.3; defaultParams.dispersion = 0.2; defaultParams.highlight = 0.5; }
-              return {
-                ...layer,
-                layerEffects: {
-                  ...current,
-                  [key]: { ...defaultParams, ...(current[key] || {}) },
-                  layerEffectsOrder: [...currentOrder, key],
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      removeLayerEffect: (layerId, key) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId || !layer.layerEffects) return layer;
-              const { [key]: _, layerEffectsOrder, ...rest } = layer.layerEffects as any;
-              return {
-                ...layer,
-                layerEffects: {
-                  ...rest,
-                  layerEffectsOrder: (layerEffectsOrder || []).filter((k: string) => k !== key),
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      swapLayerEffect: (layerId, oldKey, newKey) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId || !layer.layerEffects) return layer;
-              const current = layer.layerEffects as any;
-              const order = current.layerEffectsOrder || [];
-              const newOrder = order.map((k: string) => (k === oldKey ? newKey : k));
-              const { [oldKey]: _, ...rest } = current;
-              return {
-                ...layer,
-                layerEffects: {
-                  ...rest,
-                  [newKey]: current[newKey] || { enabled: true },
-                  layerEffectsOrder: newOrder,
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      reorderLayerEffects: (layerId, newOrder) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId || !layer.layerEffects) return layer;
-              return {
-                ...layer,
-                layerEffects: {
-                  ...layer.layerEffects,
-                  layerEffectsOrder: newOrder,
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      updateAudioEffects: (layerId, partial) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId) return layer;
-              return {
-                ...layer,
-                audioEffects: {
-                  ...(layer.audioEffects || {}),
-                  ...partial,
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      addAudioEffect: (layerId, key) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId) return layer;
-              const current = layer.audioEffects || {};
-              const currentOrder = current.effectsOrder || [];
-              if (currentOrder.includes(key)) return layer;
-              const defaultParams: any = { enabled: true };
-              if (key === "eq") { defaultParams.bands = [{ type: "peaking", freqHz: 1000, gainDb: 3, q: 1 }]; }
-              else if (key === "filter") { defaultParams.highpassHz = 80; defaultParams.lowpassHz = 16000; }
-              else if (key === "compressor") { defaultParams.thresholdDb = -18; defaultParams.ratio = 4; defaultParams.attackMs = 15; defaultParams.releaseMs = 150; defaultParams.makeupDb = 3; }
-              else if (key === "distortion") { defaultParams.style = "tube"; defaultParams.drive = 0.3; defaultParams.toneHz = 8000; defaultParams.mix = 0.4; }
-              else if (key === "delay") { defaultParams.timeMs = 250; defaultParams.feedback = 0.3; defaultParams.mix = 0.35; defaultParams.sync = "eighth"; defaultParams.toneHz = 4000; defaultParams.pingPong = true; }
-              else if (key === "reverb") { defaultParams.preset = "hall"; defaultParams.mix = 0.3; }
-              return {
-                ...layer,
-                audioEffects: {
-                  ...current,
-                  [key]: { ...defaultParams, ...(current[key] || {}) },
-                  effectsOrder: [...currentOrder, key],
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      removeAudioEffect: (layerId, key) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId || !layer.audioEffects) return layer;
-              const { [key]: _, effectsOrder, ...rest } = layer.audioEffects as any;
-              return {
-                ...layer,
-                audioEffects: {
-                  ...rest,
-                  effectsOrder: (effectsOrder || []).filter((k: string) => k !== key),
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      swapAudioEffect: (layerId, oldKey, newKey) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId || !layer.audioEffects) return layer;
-              const current = layer.audioEffects as any;
-              const order = current.effectsOrder || [];
-              const newOrder = order.map((k: string) => (k === oldKey ? newKey : k));
-              const { [oldKey]: _, ...rest } = current;
-              return {
-                ...layer,
-                audioEffects: {
-                  ...rest,
-                  [newKey]: current[newKey] || { enabled: true },
-                  effectsOrder: newOrder,
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      reorderAudioEffects: (layerId, newOrder) => {
-        set((state) => ({
-          scenes: state.scenes.map((scene) => ({
-            ...scene,
-            layers: scene.layers.map((layer) => {
-              if (layer.id !== layerId || !layer.audioEffects) return layer;
-              return {
-                ...layer,
-                audioEffects: {
-                  ...layer.audioEffects,
-                  effectsOrder: newOrder,
-                },
-              };
-            }),
-          })),
-        }));
-      },
-
-      saveEffectPreset: (preset) => {
-        const id = `effect-preset-${Date.now()}`;
-        const newPreset: EffectPreset = { ...preset, id };
-        set((state) => ({
-          effectPresets: [...(state.effectPresets || []), newPreset],
-        }));
-        return id;
-      },
-
-      removeEffectPreset: (id) => {
-        set((state) => ({
-          effectPresets: (state.effectPresets || []).filter((p) => p.id !== id),
-        }));
-      },
-
-      applyEffectPreset: (sceneId, presetId) => {
-        const state = get();
-        const preset = (state.effectPresets || []).find((p) => p.id === presetId);
-        if (!preset) return;
-        const targetId = sceneId || state.activeSceneId;
-        set((s) => ({
-          scenes: s.scenes.map((scene) => {
-            if (scene.id !== targetId) return scene;
-            return {
-              ...scene,
-              sceneEffects: {
-                ...(scene.sceneEffects || {}),
-                ...preset.sceneEffects,
-              },
-            };
-          }),
-        }));
-      },
     }),
     {
       limit: 100,
@@ -2026,7 +2082,6 @@ export const useEditorStore = create<EditorStoreState>()(
         aspectRatio: state.aspectRatio,
         scenes: state.scenes,
         activeSceneId: state.activeSceneId,
-        bloom: state.bloom,
       }),
       // Equality check on partialize output for step tracking
       equality: (pastState, currentState) =>
@@ -2156,7 +2211,6 @@ export function initAutosave() {
     scenes: initial.scenes,
     activeSceneId: initial.activeSceneId,
     selectedLayerIds: [],
-    bloom: initial.bloom,
     assets: initial.assets,
   };
   lastSavedSnapshot = JSON.stringify(initialDoc);
@@ -2169,7 +2223,6 @@ export function initAutosave() {
       scenes: state.scenes,
       activeSceneId: state.activeSceneId,
       selectedLayerIds: [], // excluded from save tracking
-      bloom: state.bloom,
       assets: state.assets,
     };
     const serialized = JSON.stringify(docSnapshot);

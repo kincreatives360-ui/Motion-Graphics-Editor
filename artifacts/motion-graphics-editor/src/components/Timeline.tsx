@@ -326,7 +326,7 @@ export function Timeline() {
     return common;
   };
 
-  const getPropertyValueAtFrame = (layer: Layer, property: AnimatableProperty): string | number => {
+  const getPropertyValueAtFrame = (layer: Layer, property: AnimatableProperty) => {
     switch (property) {
       case "x":
         return layer.transform.x;
@@ -346,8 +346,6 @@ export function Timeline() {
         return layer.shape?.stroke ?? "#ffffff";
       case "fontSize":
         return layer.text?.fontSize ?? 32;
-      default:
-        return 0;
     }
   };
 
@@ -359,7 +357,7 @@ export function Timeline() {
     if (!layer) return;
     const existingVal = sampleKeyframeTrack(track, targetFrame);
     const val =
-      existingVal !== undefined && existingVal !== null
+      existingVal !== undefined
         ? existingVal
         : getPropertyValueAtFrame(layer, track.property);
     addKeyframe(activeSceneId, track.id, {
@@ -923,9 +921,9 @@ export function Timeline() {
                     <span className="truncate pointer-events-none flex items-center gap-1">
                       <CameraIcon size={9} className="flex-shrink-0 text-[#a7f3d0]" />
                       <span>Camera Move</span>
-                      {(block as any).cameraTo && (
+                      {block.cameraTo && (
                         <span className="text-[7px] text-[#a7f3d0]/80 hidden sm:inline">
-                          ({(block as any).cameraTo.z !== undefined && (block as any).cameraTo.z !== 0 ? `Z:${(block as any).cameraTo.z > 0 ? "+" : ""}${(block as any).cameraTo.z}` : `X:${(block as any).cameraTo.x ?? 0}`})
+                          ({block.cameraTo.z !== undefined && block.cameraTo.z !== 0 ? `Z:${block.cameraTo.z > 0 ? "+" : ""}${block.cameraTo.z}` : `X:${block.cameraTo.x ?? 0}`})
                         </span>
                       )}
                       {isOverlapping && (

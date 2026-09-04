@@ -20,6 +20,16 @@ import {
   useEditorUIStore,
   type Layer,
   type Transform,
+  type BloomEffect,
+  type VignetteEffect,
+  type FilmGrainEffect,
+  type ChromaticAberrationEffect,
+  type DepthOfFieldEffect,
+  type MotionBlurEffect,
+  type ColorGradeEffect,
+  type GhostEffect,
+  type GlitchEffect,
+  type EdgeFadeEffect,
 } from "../store/editor-store";
 import {
   computeRenderedLayer,
@@ -34,8 +44,14 @@ import {
   applyFilmGrain,
   applyVignette,
   applyChromaticAberration,
-  applySceneEffectsPipeline,
+  applyColorGrade,
+  applyGlitch,
+  applyGhost,
+  applyEdgeFade,
 } from "./post-processing";
+import {
+  renderLayersAtFrame,
+} from "./render-frame";
 import {
   drawLayer,
   getCachedImage,
@@ -54,6 +70,8 @@ import {
   importImageFile,
   addAssetToCanvas,
 } from "../lib/svg-importer";
+import { R3FSceneCanvas, type R3FSceneCanvasRef } from "./r3f/R3FSceneCanvas";
+import { R3FSnapGuides } from "./r3f/R3FSnapGuides";
 
 export { drawLayer, getCachedImage, globalImageCache };
 
@@ -165,14 +183,24 @@ function hitTestLayer(layer: Layer, canvasX: number, canvasY: number): boolean {
 type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
 
 interface DragOperation {
-  type: "move" | "resize" | "rotate" | "pan" | "tilt";
+  type: "move" | "resize" | "rotate" | "pan" | "tilt" | "camera";
+  cameraDragMode?: "orbit" | "pan" | "dolly";
   startClientX: number;
   startClientY: number;
   layerId?: string;
   initialTransform?: Transform;
   initialTransforms?: Map<string, Transform>;
   initialPan?: { x: number; y: number };
-  initialCamera?: { x: number; y: number; z: number; fov: number; focusDistance: number };
+  initialCamera?: {
+    x: number;
+    y: number;
+    z: number;
+    pitch?: number;
+    yaw?: number;
+    roll?: number;
+    fov: number;
+    focusDistance: number;
+  };
   resizeHandle?: ResizeHandle;
   startAngle?: number;
   groupCenter?: { x: number; y: number };
@@ -189,6 +217,7 @@ const ZOOM_PRESETS = [25, 50, 75, 100, 125, 150, 200, 300, 400];
 export function CanvasStage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const r3fCanvasRef = useRef<R3FSceneCanvasRef>(null);
   const zoomControlRef = useRef<HTMLDivElement>(null);
 
   const zoom = useEditorUIStore((s) => s.zoom);
@@ -209,8 +238,6 @@ export function CanvasStage() {
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
   const aspectRatio = useEditorStore((s) => s.aspectRatio) || "16:9";
-  const bloom = useEditorStore((s) => s.bloom);
-  const optics = useEditorStore((s) => s.optics);
   const updateCamera = useEditorStore((s) => s.updateCamera);
 
   const [containerSize, setContainerSize] = useState({ width: 1200, height: 700 });
@@ -272,6 +299,8 @@ export function CanvasStage() {
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],
     [scenes, activeSceneId],
   );
+
+
 
   const handleFocusPillPointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
@@ -402,78 +431,136 @@ export function CanvasStage() {
 
     // Draw layers in ascending order with animation sampling and camera projection
     if (activeScene && activeScene.layers) {
-      const animationBlocks = activeScene.animationBlocks || [];
-      const currentCamera = sampleCamera(
-        activeScene.camera,
-        animationBlocks,
-        currentFrame,
-      );
-      const cameraCtx: CameraTransform = {
-        camera: currentCamera,
-        canvasWidth: nativeWidth,
-        canvasHeight: nativeHeight,
-      };
+      const activeEffects = activeScene.effects ? activeScene.effects.filter((e) => e.enabled && e.visible) : [];
 
-      // 3D Depth sorting: back-to-front painter's algorithm
-      const sortedLayers = [...activeScene.layers].sort(
-        (a, b) => (b.transform.depth ?? 0) - (a.transform.depth ?? 0),
-      );
+      const dofFx = activeEffects.find((e): e is DepthOfFieldEffect => e.type === "depthOfField");
+      const motionBlurFx = activeEffects.find((e): e is MotionBlurEffect => e.type === "motionBlur");
 
-      for (const layer of sortedLayers) {
-        const { effectiveLayer } = getScreenTransform(
-          layer,
-          animationBlocks,
-          currentFrame,
-          currentCamera,
-          { width: nativeWidth, height: nativeHeight },
-          activeScene.layers,
-        );
+      const motionSamples = motionBlurFx && motionBlurFx.samples ? Math.max(1, Math.min(12, Math.round(motionBlurFx.samples))) : 1;
+      const shutterAngle = motionBlurFx ? Math.max(0, Math.min(360, motionBlurFx.shutterAngle ?? 180)) : 0;
+      const isMotionBlurActive = Boolean(motionBlurFx && motionSamples > 1 && shutterAngle > 0);
 
-        if (!effectiveLayer.visible || effectiveLayer.opacity <= 0) continue;
-
-        // Depth of field: blur each layer proportionally to distance from camera.focusDistance
-        const blurAmount = dofBlurPx(layer, currentCamera);
-        if (blurAmount > 0.05) {
-          ctx.filter = `blur(${blurAmount.toFixed(2)}px)`;
-        } else {
-          ctx.filter = "none";
+      if (isMotionBlurActive) {
+        if (!offscreenCanvasRef.current) {
+          offscreenCanvasRef.current = document.createElement("canvas");
         }
+        const mbCanvas = offscreenCanvasRef.current;
+        if (mbCanvas.width !== nativeWidth || mbCanvas.height !== nativeHeight) {
+          mbCanvas.width = nativeWidth;
+          mbCanvas.height = nativeHeight;
+        }
+        const mbCtx = mbCanvas.getContext("2d");
 
-        drawLayer(ctx, effectiveLayer, () => draw(), activeScene.lighting);
-        ctx.filter = "none";
+        if (mbCtx) {
+          mbCtx.setTransform(1, 0, 0, 1, 0, 0);
+          mbCtx.clearRect(0, 0, nativeWidth, nativeHeight);
+
+          const shutterFraction = shutterAngle / 360;
+
+          // Temporary canvas for individual sub-frame samples
+          const sampleCanvas = document.createElement("canvas");
+          sampleCanvas.width = nativeWidth;
+          sampleCanvas.height = nativeHeight;
+          const sampleCtx = sampleCanvas.getContext("2d");
+
+          if (sampleCtx) {
+            for (let s = 0; s < motionSamples; s++) {
+              const subFrame = currentFrame - (shutterFraction * 0.5) + (s / (motionSamples - 1)) * shutterFraction;
+
+              sampleCtx.setTransform(1, 0, 0, 1, 0, 0);
+              sampleCtx.clearRect(0, 0, nativeWidth, nativeHeight);
+
+              renderLayersAtFrame(sampleCtx, activeScene, subFrame, nativeWidth, nativeHeight, activeScene.lighting, dofFx, () => draw());
+
+              mbCtx.save();
+              mbCtx.globalCompositeOperation = "source-over";
+              mbCtx.globalAlpha = 1 / (s + 1);
+              mbCtx.drawImage(sampleCanvas, 0, 0);
+              mbCtx.restore();
+            }
+
+            ctx.drawImage(mbCanvas, 0, 0);
+          } else {
+            renderLayersAtFrame(ctx, activeScene, currentFrame, nativeWidth, nativeHeight, activeScene.lighting, dofFx, () => draw());
+          }
+        } else {
+          renderLayersAtFrame(ctx, activeScene, currentFrame, nativeWidth, nativeHeight, activeScene.lighting, dofFx, () => draw());
+        }
+      } else {
+        renderLayersAtFrame(ctx, activeScene, currentFrame, nativeWidth, nativeHeight, activeScene.lighting, dofFx, () => draw());
       }
 
-      // Scene Effects Post-Processing Pipeline
-      if (canvas && offscreenCanvasRef.current) {
-        if (activeScene?.sceneEffects) {
-          applySceneEffectsPipeline(
+      // Unified Scene Effects Post-Processing Pass
+      // Fixed composite order:
+      // Color Grade -> Depth of Field -> Motion Blur -> Bloom -> Vignette -> Chromatic Aberration -> Glitch -> Film Grain -> Ghost -> Edge Fade
+      if (canvas && activeEffects.length > 0) {
+        // 1. Color Grade
+        const colorGradeFx = activeEffects.find((e): e is ColorGradeEffect => e.type === "colorGrade");
+        if (colorGradeFx) {
+          applyColorGrade(canvas, colorGradeFx.exposure, colorGradeFx.contrast, colorGradeFx.saturation);
+        }
+
+        // 2. Depth of Field (applied during layer loop)
+        // 3. Motion Blur (applied before standard layer-draw loop)
+
+        // 4. Bloom
+        const bloomFx = activeEffects.find((e): e is BloomEffect => e.type === "bloom");
+        if (bloomFx && bloomFx.intensity > 0) {
+          if (!offscreenCanvasRef.current) {
+            offscreenCanvasRef.current = document.createElement("canvas");
+          }
+          applyBloom(
             canvas,
             offscreenCanvasRef.current,
-            activeScene.sceneEffects,
-            currentFrame,
+            bloomFx.threshold * 255,
+            16,
+            bloomFx.intensity,
           );
-        } else {
-          // Legacy fallbacks for bloom & optics
-          if (bloom?.enabled) {
-            applyBloom(
-              canvas,
-              offscreenCanvasRef.current,
-              bloom.threshold ?? 200,
-              bloom.blurPx ?? 16,
-              bloom.intensity ?? 1.0,
-            );
-          }
-          if (optics) {
-            if ((optics.chromaticAberration ?? 0) > 0) {
-              applyChromaticAberration(canvas, optics.chromaticAberration * 4);
-            }
-            if ((optics.vignette ?? 0) > 0) {
-              applyVignette(canvas, optics.vignette);
-            }
-            if ((optics.filmGrain ?? 0) > 0) {
-              applyFilmGrain(canvas, optics.filmGrain);
-            }
-          }
+        }
+
+        // 5. Vignette
+        const vignetteFx = activeEffects.find((e): e is VignetteEffect => e.type === "vignette");
+        if (vignetteFx && vignetteFx.intensity > 0) {
+          applyVignette(canvas, vignetteFx.intensity);
+        }
+
+        // 6. Chromatic Aberration
+        const chromaFx = activeEffects.find((e): e is ChromaticAberrationEffect => e.type === "chromaticAberration");
+        if (chromaFx && chromaFx.offset > 0) {
+          applyChromaticAberration(canvas, chromaFx.offset);
+        }
+
+        // 7. Glitch
+        const glitchFx = activeEffects.find((e): e is GlitchEffect => e.type === "glitch");
+        if (glitchFx && glitchFx.intensity > 0) {
+          applyGlitch(canvas, glitchFx.intensity, glitchFx.speed);
+        }
+
+        // 8. Film Grain
+        const grainFx = activeEffects.find((e): e is FilmGrainEffect => e.type === "filmGrain");
+        if (grainFx && grainFx.intensity > 0) {
+          applyFilmGrain(canvas, grainFx.intensity, grainFx.size);
+        }
+
+        // 9. Ghost
+        const ghostFx = activeEffects.find((e): e is GhostEffect => e.type === "ghost");
+        if (ghostFx && ghostFx.opacity > 0) {
+          applyGhost(canvas, ghostFx.opacity, ghostFx.offset, ghostFx.blur);
+        }
+
+        // 10. Edge Fade
+        const edgeFadeFx = activeEffects.find((e): e is EdgeFadeEffect => e.type === "edgeFade");
+        if (
+          edgeFadeFx &&
+          (edgeFadeFx.top > 0 || edgeFadeFx.right > 0 || edgeFadeFx.bottom > 0 || edgeFadeFx.left > 0)
+        ) {
+          applyEdgeFade(
+            canvas,
+            edgeFadeFx.top,
+            edgeFadeFx.right,
+            edgeFadeFx.bottom,
+            edgeFadeFx.left,
+          );
         }
       }
     }
@@ -510,7 +597,6 @@ export function CanvasStage() {
     activeScene,
     activeGuides,
     currentFrame,
-    bloom,
   ]);
 
   redrawRef.current = draw;
@@ -576,6 +662,26 @@ export function CanvasStage() {
     const handleWheel = (e: WheelEvent) => {
       e.preventDefault();
 
+      // Camera tool wheel: Dolly in/out (camera.z) or adjust FOV with Ctrl/Cmd
+      if (activeTool === "camera" || isCameraSelected) {
+        if (e.ctrlKey || e.metaKey) {
+          const deltaFov = e.deltaY * 0.05;
+          const currentFov = activeScene?.camera?.fov ?? 60;
+          updateCamera(
+            { fov: Math.max(10, Math.min(150, Math.round(currentFov + deltaFov))) },
+            activeScene?.id,
+          );
+        } else {
+          const deltaZ = -e.deltaY * 2.5;
+          const currentZ = activeScene?.camera?.z ?? 0;
+          updateCamera(
+            { z: Math.round(currentZ + deltaZ) },
+            activeScene?.id,
+          );
+        }
+        return;
+      }
+
       // Pan canvas if hand tool active, or Shift / Alt pressed
       if (activeTool === "hand" || e.shiftKey || e.altKey) {
         setPan((prev) => ({
@@ -599,7 +705,7 @@ export function CanvasStage() {
     return () => {
       container.removeEventListener("wheel", handleWheel);
     };
-  }, [setZoom, setPan, activeTool]);
+  }, [setZoom, setPan, activeTool, isCameraSelected, activeScene, updateCamera]);
 
   // Auto-focus inline text editing overlay
   useEffect(() => {
@@ -718,6 +824,29 @@ export function CanvasStage() {
       return;
     }
 
+    // Camera Tool (3D Orbit, Pan, Dolly)
+    if (activeTool === "camera") {
+      const mode = (e.shiftKey || e.button === 2) ? "pan" : e.altKey ? "dolly" : "orbit";
+      dragOpRef.current = {
+        type: "camera",
+        cameraDragMode: mode,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        initialCamera: {
+          x: activeScene.camera?.x ?? 0,
+          y: activeScene.camera?.y ?? 0,
+          z: activeScene.camera?.z ?? 0,
+          pitch: activeScene.camera?.pitch ?? 0,
+          yaw: activeScene.camera?.yaw ?? 0,
+          roll: activeScene.camera?.roll ?? 0,
+          fov: activeScene.camera?.fov ?? 60,
+          focusDistance: activeScene.camera?.focusDistance ?? 1000,
+        },
+      };
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
+
     // Tilt (3D Camera orbit) tool
     if (activeTool === "tilt") {
       dragOpRef.current = {
@@ -728,6 +857,9 @@ export function CanvasStage() {
           x: activeScene.camera?.x ?? 0,
           y: activeScene.camera?.y ?? 0,
           z: activeScene.camera?.z ?? 0,
+          pitch: activeScene.camera?.pitch ?? 0,
+          yaw: activeScene.camera?.yaw ?? 0,
+          roll: activeScene.camera?.roll ?? 0,
           fov: activeScene.camera?.fov ?? 60,
           focusDistance: activeScene.camera?.focusDistance ?? 1000,
         },
@@ -1100,13 +1232,61 @@ export function CanvasStage() {
       return;
     }
 
+    if (op.type === "camera" && op.initialCamera) {
+      const dx = e.clientX - op.startClientX;
+      const dy = e.clientY - op.startClientY;
+
+      if (op.cameraDragMode === "pan") {
+        // Pan camera position X and Y
+        const panSensitivity = 1.0;
+        updateCamera(
+          {
+            x: Math.round(op.initialCamera.x - dx * panSensitivity),
+            y: Math.round(op.initialCamera.y - dy * panSensitivity),
+          },
+          activeScene.id,
+        );
+      } else if (op.cameraDragMode === "dolly") {
+        // Dolly camera depth Z
+        const dollySensitivity = 2.5;
+        updateCamera(
+          {
+            z: Math.round(op.initialCamera.z - dy * dollySensitivity),
+          },
+          activeScene.id,
+        );
+      } else {
+        // 3D Orbit: Yaw (horizontal pan angle) and Pitch (vertical tilt angle)
+        const orbitSensitivity = 0.35;
+        const newYaw = (op.initialCamera.yaw ?? 0) + dx * orbitSensitivity;
+        const newPitch = Math.max(
+          -85,
+          Math.min(85, (op.initialCamera.pitch ?? 0) - dy * orbitSensitivity),
+        );
+        updateCamera(
+          {
+            yaw: Math.round(newYaw * 10) / 10,
+            pitch: Math.round(newPitch * 10) / 10,
+          },
+          activeScene.id,
+        );
+      }
+      return;
+    }
+
     if (op.type === "tilt" && op.initialCamera) {
-      const dx = (e.clientX - op.startClientX) * 0.4;
-      const dy = (e.clientY - op.startClientY) * 0.4;
+      const dx = e.clientX - op.startClientX;
+      const dy = e.clientY - op.startClientY;
+      const orbitSensitivity = 0.35;
+      const newYaw = (op.initialCamera.yaw ?? 0) + dx * orbitSensitivity;
+      const newPitch = Math.max(
+        -85,
+        Math.min(85, (op.initialCamera.pitch ?? 0) - dy * orbitSensitivity),
+      );
       updateCamera(
         {
-          x: Math.round(op.initialCamera.x + dx),
-          y: Math.round(op.initialCamera.y + dy),
+          yaw: Math.round(newYaw * 10) / 10,
+          pitch: Math.round(newPitch * 10) / 10,
         },
         activeScene.id,
       );
@@ -1450,7 +1630,7 @@ export function CanvasStage() {
             : activeTool === "scissors"
             ? "crosshair"
             : activeTool === "camera"
-            ? "crosshair"
+            ? dragOpRef.current?.type === "camera" ? "grabbing" : "grab"
             : activeTool === "text"
             ? "text"
             : activeTool === "shape"
@@ -1483,16 +1663,31 @@ export function CanvasStage() {
           flexShrink: 0,
         }}
       >
-        <canvas
-          ref={canvasRef}
-          className="canvas"
-          data-testid="canvas-preview"
-          aria-label="Composition stage preview"
-          style={{
-            width: "100%",
-            height: "100%",
-            display: "block",
-          }}
+        {/* R3F WebGL Canvas Viewport */}
+        <div
+          className="canvas-container absolute inset-0 overflow-hidden"
+          style={{ width: "100%", height: "100%" }}
+          data-testid="r3f-canvas-container"
+        >
+          <R3FSceneCanvas
+            ref={r3fCanvasRef}
+            scene={activeScene}
+            nativeWidth={nativeWidth}
+            nativeHeight={nativeHeight}
+            frame={currentFrame}
+            onCanvasReady={(c) => {
+              (canvasRef as any).current = c;
+            }}
+          />
+        </div>
+
+        {/* Snap Guides SVG overlay */}
+        <R3FSnapGuides
+          guides={activeGuides}
+          canvasWidth={nativeWidth}
+          canvasHeight={nativeHeight}
+          scaleFactor={scaleFactor}
+          camera={activeScene?.camera}
         />
 
         {/* Drag & Drop Canvas Visual Indicator Overlay */}
@@ -1760,7 +1955,7 @@ export function CanvasStage() {
           >
             {fps}
           </span>
-          {bloom?.enabled && (
+          {activeScene?.effects?.some((e) => e.type === "bloom" && e.enabled && e.visible) && (
             <span className="px-1 py-0.2 rounded bg-[#581c87]/70 text-[#d8b4fe] text-[7.5px] font-sans border border-[#9333ea]/40">
               Bloom ON
             </span>

@@ -21,12 +21,15 @@ function createMockDocument(
   if (imageSrc) {
     layers.push({
       id: "layer-img-1",
+      parentId: null,
       name: "Image Layer",
       type: "image",
       transform: { x: 0, y: 0, width: 200, height: 200, rotation: 0, depth: 0 },
       opacity: 1,
       visible: true,
       locked: false,
+      effects: [],
+      effectsOrder: [],
       image: {
         src: imageSrc,
         naturalWidth: 800,
@@ -43,6 +46,8 @@ function createMockDocument(
     layers,
     animationBlocks: [],
     camera: { x: 0, y: 0, z: 0, fov: 60, focusDistance: 1000 },
+    effects: [],
+    effectsOrder: [],
   };
 
   return {
@@ -224,5 +229,62 @@ describe("local-store persistence", () => {
   it("returns null for non-existent document or empty database", async () => {
     expect(await loadDocument()).toBeNull();
     expect(await loadDocument("Non Existent")).toBeNull();
+  });
+
+  it("persists layer effects and layer effectsOrder across save and load", async () => {
+    const doc = createMockDocument("Layer Effects Doc");
+    doc.scenes[0].layers = [
+      {
+        id: "layer-with-fx",
+        name: "Layer with Effects",
+        type: "shape",
+        parentId: null,
+        transform: { x: 50, y: 50, width: 200, height: 200, rotation: 0, depth: 0 },
+        opacity: 1,
+        visible: true,
+        locked: false,
+        effects: [
+          {
+            id: "lfx-glow-1",
+            type: "glow",
+            enabled: true,
+            visible: true,
+            color: "#6e6ef5",
+            blur: 16,
+            intensity: 1,
+            angle: 0,
+            sheen: 0,
+            mode: "edge",
+            blend: "add",
+            rim: 0,
+            thickness: 0.3,
+          },
+          {
+            id: "lfx-ds-1",
+            type: "dropShadow",
+            enabled: true,
+            visible: false,
+            offsetX: 8,
+            offsetY: 8,
+            blur: 16,
+            color: "#000000",
+            opacity: 0.7,
+          },
+        ],
+        effectsOrder: ["lfx-ds-1", "lfx-glow-1"],
+      },
+    ];
+
+    await saveDocument(doc);
+
+    const loaded = await loadDocument("Layer Effects Doc");
+    expect(loaded).toBeDefined();
+    const layer = loaded?.scenes[0].layers[0];
+    expect(layer?.effects.length).toBe(2);
+    expect(layer?.effectsOrder).toEqual(["lfx-ds-1", "lfx-glow-1"]);
+    expect(layer?.effects[0].id).toBe("lfx-glow-1");
+    expect(layer?.effects[0].type).toBe("glow");
+    expect(layer?.effects[1].id).toBe("lfx-ds-1");
+    expect(layer?.effects[1].visible).toBe(false);
   });
 });

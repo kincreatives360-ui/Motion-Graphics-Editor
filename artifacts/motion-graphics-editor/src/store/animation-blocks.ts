@@ -40,8 +40,7 @@ export interface Keyframe<T = number | string> {
 export interface KeyframeTrackBlock {
   id: string;
   kind: "keyframe";
-  layerId: string | null;
-  name?: string;
+  layerId: string;
   property: AnimatableProperty;
   keyframes: Keyframe<number | string>[];
   startFrame: number;
@@ -49,20 +48,18 @@ export interface KeyframeTrackBlock {
   preset?: string;
   easing?: KeyframeEasing;
   customCurve?: [number, number, number, number];
-  cameraTo?: Partial<Camera>;
 }
 
 export interface PresetAnimationBlock {
   id: string;
   kind?: "preset";
   layerId: string | null; // null = camera block
-  name?: string;
   preset: BlockPreset;
   startFrame: number;
   endFrame: number;
   easing: "linear" | "ease-in-out" | "spring" | "custom";
   customCurve?: [number, number, number, number]; // cubic-bezier control points [x1, y1, x2, y2], only if easing === "custom"
-  cameraTo?: Partial<Camera>;
+  cameraTo?: Partial<{ x: number; y: number; z: number; fov: number }>;
 }
 
 export type AnimationBlock = PresetAnimationBlock | KeyframeTrackBlock;
@@ -365,7 +362,7 @@ export function sampleBlock(
 ): SampledLayerDelta {
   const duration = Math.max(1, block.endFrame - block.startFrame);
   const t = clamp((frame - block.startFrame) / duration, 0, 1);
-  const eased = applyEasing(t, (block.easing || "linear") as any, block.customCurve);
+  const eased = applyEasing(t, block.easing, block.customCurve);
 
   const presetId =
     typeof block.preset === "string"

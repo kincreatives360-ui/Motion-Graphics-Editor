@@ -38,14 +38,12 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
   const aspectRatio = useEditorStore((s) => s.aspectRatio) || "16:9";
-  const projectName = useEditorStore((s) => s.projectName) || "Untitled Project";
-  const bloom = useEditorStore((s) => s.bloom);
-  const optics = useEditorStore((s) => s.optics);
-
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId) || scenes[0],
     [scenes, activeSceneId],
   );
+
+
 
   // Resolution calculations based on aspect ratio
   const nativeWidth =
@@ -157,9 +155,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
         renderSceneFrame(ctx, activeScene, frame, {
           width: nativeWidth,
           height: nativeHeight,
-          bloom,
           lighting: activeScene.lighting,
-          optics,
           offscreenBloomCanvas: bloomCanvas,
           backgroundColor: "#000000",
           sourceCanvas: canvas,
