@@ -37,6 +37,8 @@ import {
   SaveSceneTemplateModal,
   SaveAnimationPresetModal,
 } from "./SavePresetModals";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface FlattenedLayerItem {
   layer: Layer;
@@ -422,8 +424,10 @@ export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
           </span>
           <div className="flex items-center gap-1">
             {hasGroupSelected && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
                 data-testid="button-ungroup-selection"
                 title="Ungroup selected (⌘⇧G)"
                 onClick={() => ungroupSelectedLayers()}
@@ -431,10 +435,12 @@ export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
               >
                 <Ungroup size={9} strokeWidth={2} />
                 <span>Ungroup</span>
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               data-testid="button-save-selection-preset"
               title="Save selected layers and animations as a reusable preset template"
               onClick={() => setSaveTemplateModalOpen(true)}
@@ -442,7 +448,7 @@ export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
             >
               <LayoutTemplate size={9} strokeWidth={2} />
               <span>Save as Preset</span>
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -507,7 +513,7 @@ export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
                   {/* Layer Name / Inline Input */}
                   <div className="layer-name-cell">
                     {isEditing ? (
-                      <input
+                      <Input
                         ref={inputRef}
                         className="layer-rename-input"
                         data-testid={`layer-rename-input-${layer.id}`}
@@ -530,8 +536,10 @@ export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
 
                   {/* Actions: Visibility & Lock */}
                   <div className="layer-row-actions">
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       className={`layer-action-btn ${!layer.visible ? "active-dim" : ""}`}
                       data-testid={`button-toggle-visibility-${layer.id}`}
                       title={layer.visible ? "Hide layer" : "Show layer"}
@@ -546,9 +554,11 @@ export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
                       ) : (
                         <EyeOff size={11} strokeWidth={1.5} />
                       )}
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       className={`layer-action-btn ${layer.locked ? "active-dim" : ""}`}
                       data-testid={`button-toggle-lock-${layer.id}`}
                       title={layer.locked ? "Unlock layer" : "Lock layer"}
@@ -563,7 +573,7 @@ export function LayerTree({ searchQuery = "" }: LayerTreeProps) {
                       ) : (
                         <Unlock size={11} strokeWidth={1.5} />
                       )}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </ContextMenuTrigger>

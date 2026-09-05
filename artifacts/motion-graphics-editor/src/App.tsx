@@ -18,6 +18,8 @@ import {
   ZoomIn,
   CircleDot,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useEditorStore, useEditorUIStore, type ToolId } from "./store/editor-store";
@@ -53,7 +55,9 @@ function IconButton({
   className?: string;
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="icon"
       className={`icon-button ${className}`}
       type="button"
       aria-label={label}
@@ -62,7 +66,7 @@ function IconButton({
       onClick={onClick}
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -78,10 +82,10 @@ function LeftPanel() {
   return (
     <aside className="left-panel flex flex-col h-full overflow-hidden select-none" aria-label="Project files and assets">
       <div className="topbar flex-shrink-0">
-        <button className="project-select" type="button" data-testid="button-project-menu" title="Project menu">
+        <Button variant="ghost" size="sm" className="project-select" type="button" data-testid="button-project-menu" title="Project menu">
           <span>Canvas</span>
           <ChevronDown size={11} strokeWidth={1.8} />
-        </button>
+        </Button>
         <IconButton
           label="Create new item"
           testId="button-add-item"
@@ -91,7 +95,8 @@ function LeftPanel() {
         </IconButton>
       </div>
       <div className="asset-tabs flex-shrink-0" role="tablist" aria-label="Project navigator">
-        <button
+        <Button
+          variant="ghost"
           className={`asset-tab ${tab === "File" ? "active" : ""}`}
           type="button"
           role="tab"
@@ -100,8 +105,9 @@ function LeftPanel() {
           onClick={() => setTab("File")}
         >
           File
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           className={`asset-tab ${tab === "Assets" ? "active" : ""}`}
           type="button"
           role="tab"
@@ -110,7 +116,7 @@ function LeftPanel() {
           onClick={() => setTab("Assets")}
         >
           Assets
-        </button>
+        </Button>
         <IconButton
           label={searchOpen ? "Close search" : "Search"}
           testId="button-search"
@@ -125,7 +131,7 @@ function LeftPanel() {
       </div>
       {searchOpen && (
         <div style={{ padding: "7px 8px 0" }} className="flex-shrink-0">
-          <input
+          <Input
             autoFocus
             className="text-input"
             value={searchQuery}
@@ -181,7 +187,9 @@ function LeftPanel() {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             className="help-button w-5 h-5 flex items-center justify-center rounded hover:bg-[#1d2026] hover:text-[#e2e8f0] text-[#718096] transition-colors"
             type="button"
             aria-label="Help"
@@ -190,7 +198,7 @@ function LeftPanel() {
             onClick={() => setHelpOpen(true)}
           >
             <Sparkles size={11} strokeWidth={1.7} />
-          </button>
+          </Button>
         </div>
       </div>
     </aside>
@@ -254,8 +262,9 @@ function Stage() {
       {useR3FSpikeCanvas ? <R3FSpikeCanvas /> : <CanvasStage />}
       <div className="stage-tools" role="toolbar" aria-label="Canvas tools">
         {/* Dropdown trigger button (button:nth-of-type(1)) */}
-        <button
+        <Button
           ref={triggerButtonRef}
+          variant="ghost"
           id="button-tool-select-dropdown"
           className={`tool-button select-dropdown-trigger ${isSelectGroupActive ? "active" : ""} ${selectDropdownOpen ? "dropdown-open" : ""}`}
           type="button"
@@ -282,7 +291,7 @@ function Stage() {
           >
             <path d="M0 0l2.5 3 2.5-3z" />
           </svg>
-        </button>
+        </Button>
 
         {/* Dropdown menu matching screenshot */}
         {selectDropdownOpen && (
@@ -297,7 +306,8 @@ function Stage() {
               const isSelected = activeTool === item.id;
               const ItemIcon = item.Icon;
               return (
-                <button
+                <Button
+                  variant="ghost"
                   key={item.id}
                   id={`menuitem-tool-${item.id}`}
                   role="menuitem"
@@ -315,7 +325,7 @@ function Stage() {
                     <span className="tool-dropdown-item-label">{item.label}</span>
                   </div>
                   <span className="tool-dropdown-item-shortcut">{item.shortcut}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -325,7 +335,8 @@ function Stage() {
         <ShapeSelectDropdown />
 
         {otherTools.map(({ id, label, icon }) => (
-          <button
+          <Button
+            variant="ghost"
             key={id}
             className={`tool-button ${activeTool === id ? "active" : ""}`}
             type="button"
@@ -338,11 +349,12 @@ function Stage() {
             }}
           >
             {icon}
-          </button>
+          </Button>
         ))}
 
         {/* Animate Mode Toggle */}
-        <button
+        <Button
+          variant="ghost"
           className={`tool-button ${
             animateMode
               ? "active bg-rose-950/60 text-rose-400 border-rose-500/60 shadow-[0_0_8px_rgba(244,63,94,0.3)]"
@@ -367,9 +379,10 @@ function Stage() {
             strokeWidth={1.8}
             className={animateMode ? "animate-pulse text-rose-400" : ""}
           />
-        </button>
+        </Button>
         <div className="tool-divider" />
-        <button
+        <Button
+          variant="ghost"
           className={`tool-button ${useR3FSpikeCanvas ? "active bg-cyan-900/60 text-cyan-300 border-cyan-500/50" : ""}`}
           type="button"
           aria-label="Toggle R3F Spike Canvas mode"
@@ -378,8 +391,9 @@ function Stage() {
           onClick={() => setUseR3FSpikeCanvas((prev) => !prev)}
         >
           <Sparkles size={13} strokeWidth={1.6} />
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           className="tool-button play"
           type="button"
           aria-label={playing ? "Pause preview" : "Play preview"}
@@ -388,8 +402,9 @@ function Stage() {
           onClick={() => setPlaying((value) => !value)}
         >
           {playing ? <Pause size={13} strokeWidth={1.7} /> : <CirclePlay size={13} strokeWidth={1.7} />}
-        </button>
-        <button
+        </Button>
+        <Button
+          variant="ghost"
           className="tool-button play"
           type="button"
           aria-label="Export scene (WebM / GIF)"
@@ -398,7 +413,7 @@ function Stage() {
           onClick={() => setExportModalOpen(true)}
         >
           <Download size={12} strokeWidth={1.7} />
-        </button>
+        </Button>
       </div>
     </section>
   );

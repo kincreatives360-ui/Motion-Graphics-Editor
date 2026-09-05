@@ -6,6 +6,7 @@ import {
   Trash2,
   ExternalLink,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import {
   useEditorStore,
   type ProjectAsset,
@@ -108,8 +109,9 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
         <span className="text-[10px] font-semibold text-[#8b9bb4] uppercase tracking-wider">
           Library ({assets.length})
         </span>
-        <button
+        <Button
           type="button"
+          size="sm"
           data-testid="button-upload-asset"
           aria-label="Import image asset from disk"
           className="flex items-center gap-1 px-2 py-0.5 text-[10.5px] font-medium rounded bg-[#18212e] text-[#38bdf8] hover:bg-[#202e42] hover:text-[#7dd3fc] border border-[#38bdf8]/30 transition-all cursor-pointer shadow-xs active:scale-95"
@@ -118,7 +120,7 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
         >
           <Upload size={10.5} strokeWidth={2} aria-hidden="true" />
           <span>Import</span>
-        </button>
+        </Button>
       </div>
 
       {/* Dragging over whole panel indicator */}
@@ -152,7 +154,7 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
                 : "Try a different search term."}
             </p>
             {assets.length === 0 && (
-              <button
+              <Button
                 type="button"
                 aria-label="Choose image file from disk"
                 className="px-2.5 py-1 text-[10.5px] rounded bg-[#161f2c] text-[#38bdf8] hover:bg-[#1e2c40] border border-[#38bdf8]/30 transition-colors font-medium flex items-center gap-1.5 cursor-pointer"
@@ -160,7 +162,7 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
               >
                 <Plus size={11} strokeWidth={2} aria-hidden="true" />
                 <span>Choose Image</span>
-              </button>
+              </Button>
             )}
           </div>
         ) : (
@@ -197,8 +199,10 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
 
                   {/* Hover action overlay */}
                   <div className="absolute inset-0 bg-[#070b10]/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 backdrop-blur-[1px]">
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       data-testid={`button-insert-asset-${asset.id}`}
                       aria-label={`Add ${asset.name} to canvas`}
                       className="p-1 rounded bg-[#0284c7] hover:bg-[#0369a1] text-white transition-transform hover:scale-105 shadow-sm cursor-pointer"
@@ -209,9 +213,11 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
                       }}
                     >
                       <Plus size={13} strokeWidth={2.2} aria-hidden="true" />
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
+                      variant="ghost"
+                      size="icon"
                       data-testid={`button-delete-asset-${asset.id}`}
                       aria-label={`Remove ${asset.name} from project library`}
                       className="p-1 rounded bg-[#202734] hover:bg-rose-900/60 hover:text-rose-300 text-[#94a3b8] transition-colors shadow-sm cursor-pointer"
@@ -222,7 +228,7 @@ export function AssetsPanel({ searchQuery = "" }: AssetsPanelProps) {
                       }}
                     >
                       <Trash2 size={12} strokeWidth={1.8} aria-hidden="true" />
-                    </button>
+                    </Button>
                   </div>
                 </div>
 

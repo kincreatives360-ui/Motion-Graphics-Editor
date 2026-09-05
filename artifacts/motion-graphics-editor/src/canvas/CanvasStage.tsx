@@ -72,6 +72,8 @@ import {
 import { decodeAudioFile } from "../lib/audio-manager";
 import { SocialSafeZonesOverlay, type SafeZoneMode } from "./SocialSafeZonesOverlay";
 import { R3FSceneCanvas, type R3FSceneCanvasRef } from "./r3f/R3FSceneCanvas";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { R3FSnapGuides } from "./r3f/R3FSnapGuides";
 
 export { drawLayer, getCachedImage, globalImageCache };
@@ -2261,7 +2263,7 @@ export function CanvasStage() {
                 zIndex: 10,
               }}
             >
-              <textarea
+              <Textarea
                 ref={textInputRef}
                 value={editingTextValue}
                 onChange={(e) => setEditingTextValue(e.target.value)}
@@ -2326,7 +2328,8 @@ export function CanvasStage() {
 
       {/* Floating Zoom Control Dropdown */}
       <div ref={zoomControlRef} className="zoom-control-wrapper">
-        <button
+        <Button
+          variant="ghost"
           className="zoom-pill"
           type="button"
           data-testid="button-canvas-zoom"
@@ -2345,7 +2348,7 @@ export function CanvasStage() {
               transition: "transform 0.15s ease",
             }}
           />
-        </button>
+        </Button>
 
         {zoomDropdownOpen && (
           <div
@@ -2356,7 +2359,8 @@ export function CanvasStage() {
           >
             <div className="zoom-dropdown-header">Zoom Levels</div>
 
-            <button
+            <Button
+              variant="ghost"
               className="zoom-dropdown-item"
               type="button"
               role="menuitem"
@@ -2368,15 +2372,16 @@ export function CanvasStage() {
                 <span>Fit Screen</span>
               </span>
               <span className="text-[8px] text-[#71747c]">100%</span>
-            </button>
+            </Button>
 
             <div className="zoom-dropdown-divider" />
 
             {ZOOM_PRESETS.map((preset) => {
               const isSelected = Math.round(currentZoom) === preset;
               return (
-                <button
+                <Button
                   key={preset}
+                  variant="ghost"
                   className={`zoom-dropdown-item ${isSelected ? "active" : ""}`}
                   type="button"
                   role="menuitem"
@@ -2385,14 +2390,16 @@ export function CanvasStage() {
                 >
                   <span>{preset}%</span>
                   {isSelected && <Check size={11} strokeWidth={2.2} />}
-                </button>
+                </Button>
               );
             })}
 
             <div className="zoom-dropdown-divider" />
 
             <div className="flex items-center justify-between px-2 py-1 gap-1">
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[#202327] hover:bg-[#2a2d33] text-[#cfd1d6] text-[9px] transition-colors"
                 title="Zoom in (+25%)"
@@ -2401,8 +2408,10 @@ export function CanvasStage() {
               >
                 <ZoomIn size={10} />
                 <span>In</span>
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 type="button"
                 className="flex-1 flex items-center justify-center gap-1 py-1 rounded bg-[#202327] hover:bg-[#2a2d33] text-[#cfd1d6] text-[9px] transition-colors"
                 title="Zoom out (-25%)"
@@ -2411,7 +2420,7 @@ export function CanvasStage() {
               >
                 <ZoomOut size={10} />
                 <span>Out</span>
-              </button>
+              </Button>
             </div>
 
           </div>
@@ -2420,7 +2429,9 @@ export function CanvasStage() {
 
       {/* Social Safe-Zones Quick Toggle */}
       <div className="absolute bottom-2.5 left-2.5 z-20 flex items-center gap-1">
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           type="button"
           data-testid="button-toggle-safe-zones"
           onClick={() =>
@@ -2449,7 +2460,7 @@ export function CanvasStage() {
           <span>
             Safe Zones: {safeZoneMode === "none" ? "Off" : safeZoneMode === "auto" ? "Auto" : safeZoneMode}
           </span>
-        </button>
+        </Button>
       </div>
     </div>
   );

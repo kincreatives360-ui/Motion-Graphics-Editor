@@ -79,6 +79,11 @@ import {
 } from "../store/animation-blocks";
 import { CubicBezierEditor } from "./CubicBezierEditor";
 import { SaveAnimationPresetModal } from "./SavePresetModals";
+import { ShapeLayerPanel } from "./inspector/ShapeLayerPanel";
+import { TextLayerPanel } from "./inspector/TextLayerPanel";
+import { ImageLayerPanel } from "./inspector/ImageLayerPanel";
+import { GroupLayerPanel } from "./inspector/GroupLayerPanel";
+import { MultiLayerPanel } from "./inspector/MultiLayerPanel";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Accordion,
@@ -101,6 +106,11 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 
 let sessionSceneAccordionSections: string[] = ["project-settings", "background"];
 let sessionLayerAccordionSections: string[] = ["transform"];
@@ -119,28 +129,19 @@ function IconButton({
   className?: string;
 }) {
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="icon"
       className={`icon-button ${className}`}
-      type="button"
       aria-label={label}
       title={label}
       data-testid={testId}
       onClick={onClick}
     >
       {children}
-    </button>
+    </Button>
   );
 }
-
-const FONT_OPTIONS = [
-  { label: "Inter", value: "Inter, system-ui, sans-serif" },
-  { label: "Roboto", value: "Roboto, sans-serif" },
-  { label: "Space Grotesk", value: "Space Grotesk, sans-serif" },
-  { label: "Playfair Display", value: "Playfair Display, Georgia, serif" },
-  { label: "JetBrains Mono", value: "JetBrains Mono, monospace" },
-  { label: "Arial", value: "Arial, sans-serif" },
-  { label: "Georgia", value: "Georgia, serif" },
-];
 
 function getAnimatablePropertiesForLayer(
   layer: Layer,
@@ -174,7 +175,6 @@ export function Inspector() {
   const scenes = useEditorStore((state) => state.scenes);
   const currentFrame = useEditorUIStore((state) => state.currentFrame);
   const updateLayer = useEditorStore((state) => state.updateLayer);
-  const selectLayers = useEditorStore((state) => state.selectLayers);
   const addAnimationBlock = useEditorStore((state) => state.addAnimationBlock);
   const updateAnimationBlock = useEditorStore((state) => state.updateAnimationBlock);
   const removeAnimationBlock = useEditorStore((state) => state.removeAnimationBlock);
@@ -695,14 +695,15 @@ export function Inspector() {
           >
             <Share2 size={12} strokeWidth={1.7} />
           </IconButton>
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
             className="share-button"
-            type="button"
             data-testid="button-share"
             onClick={() => setExportModalOpen(true)}
           >
             Export
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -743,41 +744,43 @@ export function Inspector() {
                       Project Settings
                     </AccordionTrigger>
                     <AccordionContent className="pb-3 pt-0 text-left">
-                      <label className="field">
+                      <Label className="field">
                         <span className="field-label">Name</span>
-                        <input
+                        <Input
                           className="text-input"
                           value={projectName}
                           onChange={(event) => setProjectName(event.target.value)}
                           data-testid="input-project-name"
                         />
-                      </label>
+                      </Label>
 
-                      <label className="field">
+                      <Label className="field">
                         <span className="field-label">Aspect Ratio</span>
-                        <span className="select-wrap">
-                          <select
-                            className="select-input"
-                            value={ratioValue}
-                            onChange={(event) => handleRatioChange(event.target.value)}
-                            data-testid="select-aspect-ratio"
-                          >
-                            <option>Landscape 16:9</option>
-                            <option>Portrait 9:16</option>
-                            <option>Square 1:1</option>
-                          </select>
-                        </span>
-                      </label>
+                        <Select
+                          value={ratioValue}
+                          onValueChange={(val) => handleRatioChange(val)}
+                          data-testid="select-aspect-ratio"
+                        >
+                          <SelectTrigger className="select-input">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Landscape 16:9">Landscape 16:9</SelectItem>
+                            <SelectItem value="Portrait 9:16">Portrait 9:16</SelectItem>
+                            <SelectItem value="Square 1:1">Square 1:1</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Label>
 
-                      <label className="field mb-0">
+                      <Label className="field mb-0">
                         <span className="field-label">Lens</span>
-                        <input
+                        <Input
                           className="text-input"
                           value={lens}
                           onChange={(event) => setLens(event.target.value)}
                           data-testid="input-lens"
                         />
-                      </label>
+                      </Label>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -815,15 +818,15 @@ export function Inspector() {
                         {backgroundMode === "Color" && (
                           <div className="mt-1.5 flex items-center justify-between">
                             <span className="field-label mb-0">Color</span>
-                            <button
+                            <Button
+                              variant="ghost"
                               className="color-input hover:border-[#4b7991] transition-colors cursor-pointer"
-                              type="button"
                               data-testid="button-background-color"
                               title="Choose background color"
                             >
                               <span className="color-swatch" />
                               <span>#000102</span>
-                            </button>
+                            </Button>
                           </div>
                         )}
 
@@ -861,8 +864,9 @@ export function Inspector() {
                         >
                           Select Camera in 3D Viewport
                         </span>
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           id="button-reset-camera"
                           data-testid="button-reset-camera"
                           className="text-[8.5px] text-[#81838a] hover:text-[#d8d9dc] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded hover:bg-[#1f2127]"
@@ -875,14 +879,14 @@ export function Inspector() {
                         >
                           <RotateCcw size={9} />
                           <span>Reset</span>
-                        </button>
+                        </Button>
                       </div>
 
                       {/* Camera 3D Position */}
                       <div className="mb-2">
                         <span className="text-[8.5px] font-medium text-[#81838a] mb-1 block">Position (3D)</span>
                         <div className="grid grid-cols-3 gap-1.5">
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos X">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos X">
                             <ScrubbableLabel
                               value={camera.x ?? 0}
                               onChange={(x) => updateCamera({ x })}
@@ -892,9 +896,9 @@ export function Inspector() {
                             >
                               X
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={camera.x ?? 0}
                               data-testid="input-camera-x"
                               onChange={(e) => {
@@ -902,9 +906,9 @@ export function Inspector() {
                                 updateCamera({ x: isNaN(val) ? 0 : val });
                               }}
                             />
-                          </label>
+                          </Label>
 
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos Y">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos Y">
                             <ScrubbableLabel
                               value={camera.y ?? 0}
                               onChange={(y) => updateCamera({ y })}
@@ -914,9 +918,9 @@ export function Inspector() {
                             >
                               Y
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={camera.y ?? 0}
                               data-testid="input-camera-y"
                               onChange={(e) => {
@@ -924,9 +928,9 @@ export function Inspector() {
                                 updateCamera({ y: isNaN(val) ? 0 : val });
                               }}
                             />
-                          </label>
+                          </Label>
 
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos Z (Depth)">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pos Z (Depth)">
                             <ScrubbableLabel
                               value={camera.z ?? 0}
                               onChange={(z) => updateCamera({ z })}
@@ -936,9 +940,9 @@ export function Inspector() {
                             >
                               Z
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={camera.z ?? 0}
                               data-testid="input-camera-z"
                               onChange={(e) => {
@@ -946,7 +950,7 @@ export function Inspector() {
                                 updateCamera({ z: isNaN(val) ? 0 : val });
                               }}
                             />
-                          </label>
+                          </Label>
                         </div>
                       </div>
 
@@ -957,7 +961,7 @@ export function Inspector() {
                           <span>Rotation (6DOF)</span>
                         </div>
                         <div className="grid grid-cols-3 gap-1.5">
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pitch (Tilt X°)">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Pitch (Tilt X°)">
                             <ScrubbableLabel
                               value={Math.round(camera.pitch ?? 0)}
                               onChange={(pitch) => updateCamera({ pitch })}
@@ -967,9 +971,9 @@ export function Inspector() {
                             >
                               Pitch
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={Math.round(camera.pitch ?? 0)}
                               data-testid="input-camera-pitch"
                               onChange={(e) => {
@@ -977,9 +981,9 @@ export function Inspector() {
                                 updateCamera({ pitch: isNaN(val) ? 0 : val });
                               }}
                             />
-                          </label>
+                          </Label>
 
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Yaw (Pan Y°)">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Yaw (Pan Y°)">
                             <ScrubbableLabel
                               value={Math.round(camera.yaw ?? 0)}
                               onChange={(yaw) => updateCamera({ yaw })}
@@ -989,9 +993,9 @@ export function Inspector() {
                             >
                               Yaw
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={Math.round(camera.yaw ?? 0)}
                               data-testid="input-camera-yaw"
                               onChange={(e) => {
@@ -999,9 +1003,9 @@ export function Inspector() {
                                 updateCamera({ yaw: isNaN(val) ? 0 : val });
                               }}
                             />
-                          </label>
+                          </Label>
 
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Roll (Dutch tilt Z°)">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Camera Roll (Dutch tilt Z°)">
                             <ScrubbableLabel
                               value={Math.round(camera.roll ?? 0)}
                               onChange={(roll) => updateCamera({ roll })}
@@ -1011,9 +1015,9 @@ export function Inspector() {
                             >
                               Roll
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={Math.round(camera.roll ?? 0)}
                               data-testid="input-camera-roll"
                               onChange={(e) => {
@@ -1021,7 +1025,7 @@ export function Inspector() {
                                 updateCamera({ roll: isNaN(val) ? 0 : val });
                               }}
                             />
-                          </label>
+                          </Label>
                         </div>
                       </div>
 
@@ -1032,7 +1036,7 @@ export function Inspector() {
                           <span>Lens & Optical Depth</span>
                         </div>
                         <div className="grid grid-cols-3 gap-1.5">
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Field of View (degrees)">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Field of View (degrees)">
                             <ScrubbableLabel
                               value={camera.fov ?? 60}
                               onChange={(fov) => updateCamera({ fov })}
@@ -1044,9 +1048,9 @@ export function Inspector() {
                             >
                               FOV
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               min={10}
                               max={160}
                               value={camera.fov ?? 60}
@@ -1056,25 +1060,28 @@ export function Inspector() {
                                 updateCamera({ fov: isNaN(val) ? 60 : val });
                               }}
                             />
-                          </label>
+                          </Label>
 
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] relative" title="Aperture f-stop">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] relative" title="Aperture f-stop">
                             <span className="text-[8px] font-mono text-[#6c6e75]">Apert</span>
-                            <select
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono cursor-pointer appearance-none pr-3"
-                              value={camera.aperture ?? 2.8}
-                              onChange={(e) => updateCamera({ aperture: parseFloat(e.target.value) })}
+                            <Select
+                              value={String(camera.aperture ?? 2.8)}
+                              onValueChange={(val) => updateCamera({ aperture: parseFloat(val) })}
                             >
-                              <option value={1.4} className="bg-[#1a1b1e] text-[#d8d9dc]">f/1.4</option>
-                              <option value={2.8} className="bg-[#1a1b1e] text-[#d8d9dc]">f/2.8</option>
-                              <option value={4.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/4.0</option>
-                              <option value={8.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/8.0</option>
-                              <option value={16.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/16</option>
-                            </select>
-                            <span className="pointer-events-none absolute right-1 text-[8px] text-[#65686e]">⌄</span>
-                          </label>
+                              <SelectTrigger className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono cursor-pointer h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0 [&>svg]:hidden">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="1.4">f/1.4</SelectItem>
+                                <SelectItem value="2.8">f/2.8</SelectItem>
+                                <SelectItem value="4">f/4.0</SelectItem>
+                                <SelectItem value="8">f/8.0</SelectItem>
+                                <SelectItem value="16">f/16</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </Label>
 
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Focus Distance (px)">
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991]" title="Focus Distance (px)">
                             <ScrubbableLabel
                               value={Math.round(camera.focusDistance ?? 1000)}
                               onChange={(focusDistance) => updateCamera({ focusDistance })}
@@ -1085,9 +1092,9 @@ export function Inspector() {
                             >
                               Focus
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={Math.round(camera.focusDistance ?? 1000)}
                               data-testid="input-camera-focus-distance"
                               onChange={(e) => {
@@ -1095,7 +1102,7 @@ export function Inspector() {
                                 updateCamera({ focusDistance: isNaN(val) ? 1000 : val });
                               }}
                             />
-                          </label>
+                          </Label>
                         </div>
                       </div>
                     </AccordionContent>
@@ -1130,7 +1137,7 @@ export function Inspector() {
                           <div>
                             <span className="text-[8.5px] font-medium text-[#81838a] mb-1.5 block">Light Source & Intensity</span>
                             <div className="grid grid-cols-3 gap-1.5">
-                              <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Position X">
+                              <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Position X">
                                 <ScrubbableLabel
                                   value={activeScene?.lighting?.lightX ?? -300}
                                   onChange={(lightX) => updateSceneLighting({ lightX })}
@@ -1140,16 +1147,16 @@ export function Inspector() {
                                 >
                                   X
                                 </ScrubbableLabel>
-                                <input
+                                <Input
                                   type="number"
-                                  className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                                  className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                                   value={activeScene?.lighting?.lightX ?? -300}
                                   onChange={(e) =>
                                     updateSceneLighting({ lightX: parseFloat(e.target.value) || 0 })
                                   }
                                 />
-                              </label>
-                              <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Position Y">
+                              </Label>
+                              <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Position Y">
                                 <ScrubbableLabel
                                   value={activeScene?.lighting?.lightY ?? -450}
                                   onChange={(lightY) => updateSceneLighting({ lightY })}
@@ -1159,16 +1166,16 @@ export function Inspector() {
                                 >
                                   Y
                                 </ScrubbableLabel>
-                                <input
+                                <Input
                                   type="number"
-                                  className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                                  className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                                   value={activeScene?.lighting?.lightY ?? -450}
                                   onChange={(e) =>
                                     updateSceneLighting({ lightY: parseFloat(e.target.value) || 0 })
                                   }
                                 />
-                              </label>
-                              <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Intensity (0.0 - 2.0)">
+                              </Label>
+                              <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#4b7991] focus-within:ring-1 focus-within:ring-[#244c60] transition-colors" title="Light Intensity (0.0 - 2.0)">
                                 <ScrubbableLabel
                                   value={activeScene?.lighting?.intensity ?? 0.85}
                                   onChange={(intensity) => updateSceneLighting({ intensity })}
@@ -1180,18 +1187,18 @@ export function Inspector() {
                                 >
                                   Int
                                 </ScrubbableLabel>
-                                <input
+                                <Input
                                   type="number"
                                   step="0.1"
                                   min="0"
                                   max="2"
-                                  className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                                  className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                                   value={activeScene?.lighting?.intensity ?? 0.85}
                                   onChange={(e) =>
                                     updateSceneLighting({ intensity: parseFloat(e.target.value) || 0.85 })
                                   }
                                 />
-                              </label>
+                              </Label>
                             </div>
                           </div>
 
@@ -1301,8 +1308,9 @@ export function Inspector() {
                                 {activeScene.audioTrack.duration.toFixed(1)}s
                               </span>
                             </div>
-                            <button
-                              type="button"
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               className="text-[8.5px] text-[#f43f5e] hover:text-[#fda4af] flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[#4c0519]/50 transition-colors"
                               onClick={() => removeAudioTrack(activeScene.id)}
                               title="Remove audio track"
@@ -1310,7 +1318,7 @@ export function Inspector() {
                             >
                               <Trash2 size={10} />
                               <span>Remove</span>
-                            </button>
+                            </Button>
                           </div>
 
                           {/* Waveform visual */}
@@ -1346,8 +1354,9 @@ export function Inspector() {
                               </span>
                             </div>
                             <div className="flex items-center gap-2">
-                              <button
-                                type="button"
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 className={`p-1 rounded border transition-colors ${
                                   activeScene.audioTrack.muted
                                     ? "bg-rose-950/60 border-rose-800 text-rose-300"
@@ -1362,7 +1371,7 @@ export function Inspector() {
                                 data-testid="button-inspector-mute-audio"
                               >
                                 {activeScene.audioTrack.muted ? <VolumeX size={11} /> : <Volume2 size={11} />}
-                              </button>
+                              </Button>
                               <input
                                 type="range"
                                 min="0"
@@ -1393,7 +1402,7 @@ export function Inspector() {
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5">
-                              <input
+                              <Input
                                 type="number"
                                 className="text-input font-mono text-[9px] h-6"
                                 value={activeScene.audioTrack.offsetFrames || 0}
@@ -1405,13 +1414,14 @@ export function Inspector() {
                                 }}
                                 data-testid="input-inspector-audio-offset"
                               />
-                              <button
-                                type="button"
+                              <Button
+                                variant="ghost"
+                                size="sm"
                                 className="px-2 py-1 bg-[#201c33] hover:bg-[#2e264d] text-[#c4b5fd] border border-[#3b3164] rounded text-[8.5px] transition-colors"
                                 onClick={() => updateAudioTrack(activeScene.id, { offsetFrames: 0 })}
                               >
                                 Reset
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         </div>
@@ -1421,7 +1431,7 @@ export function Inspector() {
                           <p className="text-[9px] text-[#a1a1aa] mb-2">
                             No soundtrack imported. Add an MP3 or WAV file to sync motion animations to music beats.
                           </p>
-                          <label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#6d28d9] hover:bg-[#7c3aed] text-white text-[9px] font-medium transition-colors shadow-sm">
+                          <Label className="cursor-pointer inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#6d28d9] hover:bg-[#7c3aed] text-white text-[9px] font-medium transition-colors shadow-sm">
                             <Plus size={10} />
                             <span>Import Audio</span>
                             <input
@@ -1449,7 +1459,7 @@ export function Inspector() {
                                 }
                               }}
                             />
-                          </label>
+                          </Label>
                         </div>
                       )}
                     </AccordionContent>
@@ -1479,8 +1489,9 @@ export function Inspector() {
                     <AccordionContent className="p-2.5 pt-2 text-left pb-2.5">
                       <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-[#202227]">
                         <span className="text-[8.5px] text-[#787c88] uppercase tracking-wider font-medium">Depth & Optics</span>
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           id="button-reset-camera-animate"
                           data-testid="button-reset-camera-animate"
                           className="text-[8.5px] text-[#81838a] hover:text-[#e2e8f0] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded bg-[#1c1e24] hover:bg-[#252830] border border-[#2d3038]"
@@ -1493,7 +1504,7 @@ export function Inspector() {
                         >
                           <RotateCcw size={9} />
                           <span>Reset</span>
-                        </button>
+                        </Button>
                       </div>
 
                       {/* Camera Focus Distance Control */}
@@ -1523,10 +1534,10 @@ export function Inspector() {
                               updateCamera({ focusDistance: isNaN(val) ? 1000 : val });
                             }}
                           />
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 w-20 focus-within:border-[#34d399]">
-                            <input
+                          <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 w-20 focus-within:border-[#34d399]">
+                            <Input
                               type="number"
-                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono text-right"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono text-right h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                               value={Math.round(camera.focusDistance ?? 1000)}
                               data-testid="input-camera-focus-distance-animate"
                               min={10}
@@ -1537,7 +1548,7 @@ export function Inspector() {
                               }}
                             />
                             <span className="text-[8px] text-[#6c6e75] font-mono">px</span>
-                          </label>
+                          </Label>
                         </div>
 
                         {/* Quick Focus Depth Presets */}
@@ -1549,9 +1560,10 @@ export function Inspector() {
                           ].map((preset) => {
                             const isCurrent = Math.abs((camera.focusDistance ?? 1000) - preset.value) < 50;
                             return (
-                              <button
+                              <Button
                                 key={preset.value}
-                                type="button"
+                                variant="ghost"
+                                size="sm"
                                 className={`flex-1 py-0.5 px-1 rounded text-[8px] font-mono transition-colors border ${
                                   isCurrent
                                     ? "bg-[#064e3b]/70 text-[#6ee7b7] border-[#10b981]/60 font-semibold"
@@ -1560,7 +1572,7 @@ export function Inspector() {
                                 onClick={() => updateCamera({ focusDistance: preset.value })}
                               >
                                 {preset.label}
-                              </button>
+                              </Button>
                             );
                           })}
                         </div>
@@ -1568,7 +1580,7 @@ export function Inspector() {
 
                       {/* Quick Optics Row (FOV & Aperture) */}
                       <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#202227]">
-                        <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#38bdf8]" title="Field of View (degrees)">
+                        <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#38bdf8]" title="Field of View (degrees)">
                           <ScrubbableLabel
                             value={camera.fov ?? 60}
                             onChange={(fov) => updateCamera({ fov })}
@@ -1579,9 +1591,9 @@ export function Inspector() {
                           >
                             FOV
                           </ScrubbableLabel>
-                          <input
+                          <Input
                             type="number"
-                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             min={10}
                             max={160}
                             value={camera.fov ?? 60}
@@ -1591,23 +1603,26 @@ export function Inspector() {
                               updateCamera({ fov: isNaN(val) ? 60 : val });
                             }}
                           />
-                        </label>
+                        </Label>
 
-                        <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#38bdf8] relative" title="Aperture f-stop">
+                        <Label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#38bdf8] relative" title="Aperture f-stop">
                           <span className="text-[8px] font-mono text-[#6c6e75]">Apert</span>
-                          <select
-                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono cursor-pointer appearance-none pr-3"
-                            value={camera.aperture ?? 2.8}
-                            onChange={(e) => updateCamera({ aperture: parseFloat(e.target.value) })}
+                          <Select
+                            value={String(camera.aperture ?? 2.8)}
+                            onValueChange={(val) => updateCamera({ aperture: parseFloat(val) })}
                           >
-                            <option value={1.4} className="bg-[#1a1b1e] text-[#d8d9dc]">f/1.4</option>
-                            <option value={2.8} className="bg-[#1a1b1e] text-[#d8d9dc]">f/2.8</option>
-                            <option value={4.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/4.0</option>
-                            <option value={8.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/8.0</option>
-                            <option value={16.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/16</option>
-                          </select>
-                          <span className="pointer-events-none absolute right-1 text-[8px] text-[#65686e]">⌄</span>
-                        </label>
+                            <SelectTrigger className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono cursor-pointer h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0 [&>svg]:hidden">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="1.4">f/1.4</SelectItem>
+                              <SelectItem value="2.8">f/2.8</SelectItem>
+                              <SelectItem value="4">f/4.0</SelectItem>
+                              <SelectItem value="8">f/8.0</SelectItem>
+                              <SelectItem value="16">f/16</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Label>
                       </div>
                     </AccordionContent>
                   </AccordionItem>
@@ -1621,8 +1636,7 @@ export function Inspector() {
                     </span>
                   </div>
 
-                  <button
-                    type="button"
+                  <Button
                     data-testid="button-add-camera-block"
                     className="py-1 px-2 text-[9px] font-medium bg-[#064e3b] hover:bg-[#047857] text-[#6ee7b7] rounded border border-[#10b981]/40 inline-flex items-center gap-1 shadow-sm transition-colors"
                     onClick={() => {
@@ -1646,7 +1660,7 @@ export function Inspector() {
                   >
                     <Plus size={10} strokeWidth={2} />
                     <span>Add Camera Move</span>
-                  </button>
+                  </Button>
                 </div>
 
                 {cameraBlocks.length === 0 ? (
@@ -1674,19 +1688,20 @@ export function Inspector() {
                               Camera Move
                             </span>
                           </div>
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="text-[#64748b] hover:text-[#f87171] p-1 rounded hover:bg-[#202227] transition-colors"
                             title="Remove camera block"
                             onClick={() => removeAnimationBlock(block.id)}
                           >
                             <Trash2 size={11} />
-                          </button>
+                          </Button>
                         </div>
 
                         {/* Timing Range: Start & End Frames */}
                         <div className="grid grid-cols-2 gap-2">
-                          <label className="field mb-0">
+                          <Label className="field mb-0">
                             <ScrubbableLabel
                               value={block.startFrame}
                               onChange={(startFrame) =>
@@ -1702,7 +1717,7 @@ export function Inspector() {
                             >
                               Start Frame
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
                               className="text-input font-mono text-[9px]"
                               min={0}
@@ -1717,9 +1732,9 @@ export function Inspector() {
                                 }
                               }}
                             />
-                          </label>
+                          </Label>
 
-                          <label className="field mb-0">
+                          <Label className="field mb-0">
                             <ScrubbableLabel
                               value={block.endFrame}
                               onChange={(endFrame) =>
@@ -1735,7 +1750,7 @@ export function Inspector() {
                             >
                               End Frame
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
                               className="text-input font-mono text-[9px]"
                               min={block.startFrame + 1}
@@ -1750,7 +1765,7 @@ export function Inspector() {
                                 }
                               }}
                             />
-                          </label>
+                          </Label>
                         </div>
 
                         {/* Camera Delta Targets (cameraTo) */}
@@ -1759,7 +1774,7 @@ export function Inspector() {
                             Target Deltas (Motion Shift)
                           </span>
                           <div className="grid grid-cols-2 gap-2 mb-2">
-                            <label className="field mb-0">
+                            <Label className="field mb-0">
                               <ScrubbableLabel
                                 value={block.cameraTo?.x ?? 0}
                                 onChange={(x) =>
@@ -1776,7 +1791,7 @@ export function Inspector() {
                               >
                                 Delta X (px)
                               </ScrubbableLabel>
-                              <input
+                              <Input
                                 type="number"
                                 className="text-input font-mono text-[9px]"
                                 value={block.cameraTo?.x ?? 0}
@@ -1790,8 +1805,8 @@ export function Inspector() {
                                   });
                                 }}
                               />
-                            </label>
-                            <label className="field mb-0">
+                            </Label>
+                            <Label className="field mb-0">
                               <ScrubbableLabel
                                 value={block.cameraTo?.y ?? 0}
                                 onChange={(y) =>
@@ -1808,7 +1823,7 @@ export function Inspector() {
                               >
                                 Delta Y (px)
                               </ScrubbableLabel>
-                              <input
+                              <Input
                                 type="number"
                                 className="text-input font-mono text-[9px]"
                                 value={block.cameraTo?.y ?? 0}
@@ -1822,10 +1837,10 @@ export function Inspector() {
                                   });
                                 }}
                               />
-                            </label>
+                            </Label>
                           </div>
                           <div className="grid grid-cols-2 gap-2">
-                            <label className="field mb-0">
+                            <Label className="field mb-0">
                               <ScrubbableLabel
                                 value={block.cameraTo?.z ?? 0}
                                 onChange={(z) =>
@@ -1842,7 +1857,7 @@ export function Inspector() {
                               >
                                 Delta Z (Depth)
                               </ScrubbableLabel>
-                              <input
+                              <Input
                                 type="number"
                                 className="text-input font-mono text-[9px]"
                                 value={block.cameraTo?.z ?? 0}
@@ -1856,8 +1871,8 @@ export function Inspector() {
                                   });
                                 }}
                               />
-                            </label>
-                            <label className="field mb-0">
+                            </Label>
+                            <Label className="field mb-0">
                               <ScrubbableLabel
                                 value={block.cameraTo?.fov ?? 0}
                                 onChange={(fov) =>
@@ -1874,7 +1889,7 @@ export function Inspector() {
                               >
                                 Delta FOV (deg)
                               </ScrubbableLabel>
-                              <input
+                              <Input
                                 type="number"
                                 className="text-input font-mono text-[9px]"
                                 value={block.cameraTo?.fov ?? 0}
@@ -1888,31 +1903,33 @@ export function Inspector() {
                                   });
                                 }}
                               />
-                            </label>
+                            </Label>
                           </div>
                         </div>
 
                         {/* Easing Picker */}
                         <div className="border-t border-[#23262c] pt-2">
-                          <label className="field mb-0">
+                          <Label className="field mb-0">
                             <span className="field-label text-[8.5px]">Easing</span>
-                            <span className="select-wrap">
-                              <select
-                                className="select-input text-[9px]"
-                                value={block.easing}
-                                onChange={(e) => {
-                                  updateAnimationBlock(block.id, {
-                                    easing: e.target.value as any,
-                                  });
-                                }}
-                              >
-                                <option value="ease-in-out">Ease In-Out</option>
-                                <option value="linear">Linear</option>
-                                <option value="spring">Spring (Elastic)</option>
-                                <option value="custom">Custom Cubic Bezier</option>
-                              </select>
-                            </span>
-                          </label>
+                            <Select
+                              value={block.easing}
+                              onValueChange={(val) => {
+                                updateAnimationBlock(block.id, {
+                                  easing: val as any,
+                                });
+                              }}
+                            >
+                              <SelectTrigger className="select-input text-[9px]">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="ease-in-out">Ease In-Out</SelectItem>
+                                <SelectItem value="linear">Linear</SelectItem>
+                                <SelectItem value="spring">Spring (Elastic)</SelectItem>
+                                <SelectItem value="custom">Custom Cubic Bezier</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </Label>
                         </div>
                       </div>
                     ))}
@@ -1958,8 +1975,8 @@ export function Inspector() {
                         <Layers size={11} />
                       )}
                     </span>
-                    <input
-                      className="text-[10px] font-semibold text-[#e2e4e8] bg-transparent border-0 hover:bg-[#1a1b1f] focus:bg-[#151619] focus:ring-1 focus:ring-[#38bdf8] rounded px-1 py-0.5 min-w-0 outline-none"
+                    <Input
+                      className="text-[10px] font-semibold text-[#e2e4e8] bg-transparent border-0 hover:bg-[#1a1b1f] focus:bg-[#151619] focus:ring-1 focus:ring-[#38bdf8] rounded px-1 py-0.5 min-w-0 outline-none h-6"
                       value={selectedLayer.name}
                       onChange={(e) =>
                         updateLayer(selectedLayer.id, { name: e.target.value })
@@ -1992,82 +2009,90 @@ export function Inspector() {
                       {/* Alignment & Flip Toolbar */}
                       <div className="flex items-center justify-between gap-1 mb-2.5 pb-2 border-b border-[#202227]">
                         <div className="flex items-center gap-0.5 bg-[#141518] p-0.5 rounded border border-[#23252a]">
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => alignLeft()}
                             className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
                             title="Align Left (⌥A)"
                             data-testid="btn-align-left"
                           >
                             <AlignStartHorizontal size={13} />
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => alignCenterHorizontal()}
                             className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
                             title="Align Center Horizontal (⌥H)"
                             data-testid="btn-align-center-h"
                           >
                             <AlignCenterHorizontal size={13} />
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => alignRight()}
                             className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
                             title="Align Right (⌥D)"
                             data-testid="btn-align-right"
                           >
                             <AlignEndHorizontal size={13} />
-                          </button>
+                          </Button>
                           <div className="w-[1px] h-3 bg-[#2a2c30] mx-0.5" />
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => alignTop()}
                             className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
                             title="Align Top (⌥W)"
                             data-testid="btn-align-top"
                           >
                             <AlignStartVertical size={13} />
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => alignCenterVertical()}
                             className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
                             title="Align Center Vertical (⌥V)"
                             data-testid="btn-align-center-v"
                           >
                             <AlignCenterVertical size={13} />
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => alignBottom()}
                             className="p-1 rounded text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227] transition-colors"
                             title="Align Bottom (⌥S)"
                             data-testid="btn-align-bottom"
                           >
                             <AlignEndVertical size={13} />
-                          </button>
+                          </Button>
                         </div>
 
                         <div className="flex items-center gap-0.5 bg-[#141518] p-0.5 rounded border border-[#23252a]">
-                          <button
-                            type="button"
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => flipHorizontal()}
                             className={`p-1 rounded transition-colors ${selectedLayer.transform.flipX ? "text-[#38bdf8] bg-[#38bdf8]/15" : "text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227]"}`}
                             title="Flip Horizontal (⇧H)"
                             data-testid="btn-flip-horizontal"
                           >
                             <FlipHorizontal size={13} />
-                          </button>
-                          <button
-                            type="button"
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             onClick={() => flipVertical()}
                             className={`p-1 rounded transition-colors ${selectedLayer.transform.flipY ? "text-[#38bdf8] bg-[#38bdf8]/15" : "text-[#999ba0] hover:text-[#e4e4e7] hover:bg-[#202227]"}`}
                             title="Flip Vertical (⇧V)"
                             data-testid="btn-flip-vertical"
                           >
                             <FlipVertical size={13} />
-                          </button>
+                          </Button>
                         </div>
                       </div>
 
@@ -2081,9 +2106,9 @@ export function Inspector() {
                           >
                             X
                           </span>
-                          <input
+                          <Input
                             type="number"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={Math.round(selectedLayer.transform.x)}
                             onChange={(e) =>
                               handleTransformChange("x", parseFloat(e.target.value))
@@ -2099,9 +2124,9 @@ export function Inspector() {
                           >
                             Y
                           </span>
-                          <input
+                          <Input
                             type="number"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={Math.round(selectedLayer.transform.y)}
                             onChange={(e) =>
                               handleTransformChange("y", parseFloat(e.target.value))
@@ -2121,10 +2146,10 @@ export function Inspector() {
                           >
                             W
                           </span>
-                          <input
+                          <Input
                             type="number"
                             min="1"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={Math.round(selectedLayer.transform.width)}
                             onChange={(e) =>
                               handleTransformChange("width", Math.max(1, parseFloat(e.target.value)))
@@ -2140,10 +2165,10 @@ export function Inspector() {
                           >
                             H
                           </span>
-                          <input
+                          <Input
                             type="number"
                             min="1"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={Math.round(selectedLayer.transform.height)}
                             onChange={(e) =>
                               handleTransformChange("height", Math.max(1, parseFloat(e.target.value)))
@@ -2163,9 +2188,9 @@ export function Inspector() {
                           >
                             R°
                           </span>
-                          <input
+                          <Input
                             type="number"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={Math.round(selectedLayer.transform.rotation || 0)}
                             onChange={(e) =>
                               handleTransformChange("rotation", parseFloat(e.target.value))
@@ -2173,7 +2198,7 @@ export function Inspector() {
                             data-testid="input-transform-rotation"
                           />
                         </div>
-                        <label
+                        <Label
                           className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6"
                           title="Z-Depth (Camera space layer plane)"
                         >
@@ -2186,21 +2211,21 @@ export function Inspector() {
                           >
                             Z
                           </ScrubbableLabel>
-                          <input
+                          <Input
                             type="number"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={selectedLayer.transform.depth || 0}
                             onChange={(e) =>
                               handleTransformChange("depth", parseFloat(e.target.value))
                             }
                             data-testid="input-transform-depth"
                           />
-                        </label>
+                        </Label>
                       </div>
 
                       {/* 3D Tilt (X) & Swivel (Y) */}
                       <div className="grid grid-cols-2 gap-2 mb-2">
-                        <label
+                        <Label
                           className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6"
                           title="3D Tilt (Pitch X-axis rotation)"
                         >
@@ -2213,17 +2238,17 @@ export function Inspector() {
                           >
                             Tilt X°
                           </ScrubbableLabel>
-                          <input
+                          <Input
                             type="number"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={Math.round(selectedLayer.transform.rotateX || 0)}
                             onChange={(e) =>
                               handleTransformChange("rotateX", parseFloat(e.target.value))
                             }
                             data-testid="input-transform-rotate-x"
                           />
-                        </label>
-                        <label
+                        </Label>
+                        <Label
                           className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6"
                           title="3D Swivel (Yaw Y-axis rotation)"
                         >
@@ -2236,16 +2261,16 @@ export function Inspector() {
                           >
                             Swivel Y°
                           </ScrubbableLabel>
-                          <input
+                          <Input
                             type="number"
-                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
+                            className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono h-6 border-0 px-0 rounded-none focus-visible:ring-0 focus-visible:ring-offset-0"
                             value={Math.round(selectedLayer.transform.rotateY || 0)}
                             onChange={(e) =>
                               handleTransformChange("rotateY", parseFloat(e.target.value))
                             }
                             data-testid="input-transform-rotate-y"
                           />
-                        </label>
+                        </Label>
                       </div>
 
                       {/* Device Mockup Frame */}
@@ -2256,22 +2281,24 @@ export function Inspector() {
                             <span>3D Device Frame</span>
                           </span>
                         </div>
-                        <span className="select-wrap">
-                          <select
-                            className="select-input text-[9px]"
-                            value={selectedLayer.mockup || "none"}
-                            onChange={(e) =>
-                              updateLayer(selectedLayer.id, {
-                                mockup: e.target.value === "none" ? undefined : (e.target.value as any),
-                              })
-                            }
-                          >
-                            <option value="none">None (Raw Layer)</option>
-                            <option value="iphone">iPhone 16 Pro (Titanium + Island)</option>
-                            <option value="macbook">MacBook Pro (Aluminum + Notch)</option>
-                            <option value="browser">Safari Browser (Dark Header)</option>
-                          </select>
-                        </span>
+                        <Select
+                          value={selectedLayer.mockup || "none"}
+                          onValueChange={(val) =>
+                            updateLayer(selectedLayer.id, {
+                              mockup: val === "none" ? undefined : (val as any),
+                            })
+                          }
+                        >
+                          <SelectTrigger className="select-input text-[9px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">None (Raw Layer)</SelectItem>
+                            <SelectItem value="iphone">iPhone 16 Pro (Titanium + Island)</SelectItem>
+                            <SelectItem value="macbook">MacBook Pro (Aluminum + Notch)</SelectItem>
+                            <SelectItem value="browser">Safari Browser (Dark Header)</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
 
                       {/* Opacity Slider */}
@@ -2302,7 +2329,7 @@ export function Inspector() {
                             }
                             data-testid="input-opacity-slider"
                           />
-                          <input
+                          <Input
                             type="number"
                             min="0"
                             max="100"
@@ -2318,486 +2345,24 @@ export function Inspector() {
                     </AccordionContent>
                   </AccordionItem>
 
-                  {/* 2. Shape Appearance (Shape Layers) */}
+                  {/* 2. Shape Appearance & Effects (Shape Layers) */}
                   {selectedLayer.type === "shape" && (
-                    <AccordionItem value="appearance" className="border-b border-[#202227]" data-testid="section-shape-props">
-                      <AccordionTrigger className="py-2.5 text-[11px] font-semibold tracking-wider text-[#999ba0] uppercase hover:text-[#d8d9dc] hover:no-underline">
-                        <div className="flex items-center gap-1.5">
-                          <Square size={12} className="text-[#38bdf8]" />
-                          <span>Shape Appearance</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="pb-3 pt-0 text-left">
-                        {/* Shape Kind */}
-                        <div className="field mb-2">
-                          <span className="field-label">Type</span>
-                          <div className="grid grid-cols-3 gap-1 bg-[#1a1b1e] p-0.5 rounded border border-[#2a2c30]">
-                            <button
-                              type="button"
-                              className={`py-1 text-[9px] rounded font-medium transition-colors ${
-                                selectedLayer.shape?.kind === "rect" ||
-                                (!selectedLayer.shape?.kind && !selectedLayer.shape?.path)
-                                  ? "bg-[#25282f] text-white"
-                                  : "text-[#80838a] hover:text-[#d0d2d6]"
-                              }`}
-                              onClick={() =>
-                                updateLayer(selectedLayer.id, {
-                                  shape: {
-                                    ...(selectedLayer.shape || { fill: "#38bdf8" }),
-                                    kind: "rect",
-                                  },
-                                })
-                              }
-                              data-testid="button-shape-rect"
-                            >
-                              Rectangle
-                            </button>
-                            <button
-                              type="button"
-                              className={`py-1 text-[9px] rounded font-medium transition-colors ${
-                                selectedLayer.shape?.kind === "ellipse"
-                                  ? "bg-[#25282f] text-white"
-                                  : "text-[#80838a] hover:text-[#d0d2d6]"
-                              }`}
-                              onClick={() =>
-                                updateLayer(selectedLayer.id, {
-                                  shape: {
-                                    ...(selectedLayer.shape || { fill: "#38bdf8" }),
-                                    kind: "ellipse",
-                                  },
-                                })
-                              }
-                              data-testid="button-shape-ellipse"
-                            >
-                              Ellipse
-                            </button>
-                            <button
-                              type="button"
-                              className={`py-1 text-[9px] rounded font-medium transition-colors ${
-                                selectedLayer.shape?.kind === "path" || selectedLayer.shape?.path
-                                  ? "bg-[#25282f] text-[#38bdf8]"
-                                  : "text-[#80838a] hover:text-[#d0d2d6]"
-                              }`}
-                              onClick={() =>
-                                updateLayer(selectedLayer.id, {
-                                  shape: {
-                                    ...(selectedLayer.shape || { fill: "#38bdf8" }),
-                                    kind: "path",
-                                  },
-                                })
-                              }
-                              data-testid="button-shape-path"
-                            >
-                              Path
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Path data viewer if vector path */}
-                        {selectedLayer.shape?.path && (
-                          <div className="field mb-2">
-                            <span className="field-label">SVG Path Data</span>
-                            <input
-                              type="text"
-                              readOnly
-                              className="w-full bg-[#16181d] border border-[#262930] rounded text-[8.5px] font-mono text-[#94a3b8] px-2 py-1 outline-none truncate select-all"
-                              value={selectedLayer.shape.path}
-                              title={selectedLayer.shape.path}
-                            />
-                          </div>
-                        )}
-
-                        {/* Fill Color */}
-                        <div className="field mb-2">
-                          <span className="field-label">Fill Color</span>
-                          <div className="flex items-center gap-1.5 bg-[#1a1b1e] border border-[#2a2c30] rounded p-1 h-7">
-                            <input
-                              type="color"
-                              className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
-                              value={
-                                selectedLayer.shape?.fill && selectedLayer.shape.fill.startsWith("#")
-                                  ? selectedLayer.shape.fill
-                                  : "#38bdf8"
-                              }
-                              onChange={(e) =>
-                                updateLayer(selectedLayer.id, {
-                                  shape: {
-                                    ...(selectedLayer.shape || { kind: "rect" }),
-                                    fill: e.target.value,
-                                  },
-                                })
-                              }
-                              data-testid="input-shape-fill"
-                            />
-                            <input
-                              type="text"
-                              className="w-full bg-transparent text-[9px] font-mono text-[#d8d9dc] outline-none"
-                              value={selectedLayer.shape?.fill || "#38bdf8"}
-                              onChange={(e) =>
-                                updateLayer(selectedLayer.id, {
-                                  shape: {
-                                    ...(selectedLayer.shape || { kind: "rect" }),
-                                    fill: e.target.value,
-                                  },
-                                })
-                              }
-                            />
-                          </div>
-                        </div>
-
-                        {/* Stroke Color & Width */}
-                        <div className="field mb-0">
-                          <span className="field-label">Stroke</span>
-                          <div className="grid grid-cols-3 gap-1.5">
-                            <div className="col-span-2 flex items-center gap-1.5 bg-[#1a1b1e] border border-[#2a2c30] rounded p-1 h-7">
-                              <input
-                                type="color"
-                                className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
-                                value={
-                                  selectedLayer.shape?.stroke && selectedLayer.shape.stroke.startsWith("#")
-                                    ? selectedLayer.shape.stroke
-                                    : "#0284c7"
-                                }
-                                onChange={(e) =>
-                                  updateLayer(selectedLayer.id, {
-                                    shape: {
-                                      ...(selectedLayer.shape || { kind: "rect", fill: "#38bdf8" }),
-                                      stroke: e.target.value,
-                                    },
-                                  })
-                                }
-                                data-testid="input-shape-stroke"
-                              />
-                              <input
-                                type="text"
-                                className="w-full bg-transparent text-[9px] font-mono text-[#d8d9dc] outline-none"
-                                value={selectedLayer.shape?.stroke || "#0284c7"}
-                                onChange={(e) =>
-                                  updateLayer(selectedLayer.id, {
-                                    shape: {
-                                      ...(selectedLayer.shape || { kind: "rect", fill: "#38bdf8" }),
-                                      stroke: e.target.value,
-                                    },
-                                  })
-                                }
-                              />
-                            </div>
-                            <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-7">
-                              <ScrubbableLabel
-                                value={selectedLayer.shape?.strokeWidth ?? 2}
-                                onChange={(w) =>
-                                  updateLayer(selectedLayer.id, {
-                                    shape: {
-                                      ...(selectedLayer.shape || { kind: "rect", fill: "#38bdf8" }),
-                                      strokeWidth: Math.max(0, Math.round(w)),
-                                    },
-                                  })
-                                }
-                                min={0}
-                                max={50}
-                                step={1}
-                                className="text-[8.5px] font-mono text-[#6c6e75] hover:text-[#38bdf8] transition-colors select-none"
-                                title="Drag horizontal to scrub Stroke Width (Shift: fast, Alt: precision)"
-                              >
-                                px
-                              </ScrubbableLabel>
-                              <input
-                                type="number"
-                                min="0"
-                                max="50"
-                                className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
-                                value={selectedLayer.shape?.strokeWidth ?? 2}
-                                onChange={(e) =>
-                                  updateLayer(selectedLayer.id, {
-                                    shape: {
-                                      ...(selectedLayer.shape || { kind: "rect", fill: "#38bdf8" }),
-                                      strokeWidth: Math.max(0, parseInt(e.target.value) || 0),
-                                    },
-                                  })
-                                }
-                                data-testid="input-shape-stroke-width"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                    <ShapeLayerPanel layer={selectedLayer} updateLayer={updateLayer} />
                   )}
 
-                  {/* Layer Effects (for shape layers: after Shape Appearance, before Typography) */}
-                  {selectedLayer.type === "shape" && (
-                    <AccordionItem value="layer-effects" className="border-b border-[#202227]" data-testid="section-layer-effects">
-                      <AccordionTrigger className="py-2.5 text-[11px] font-semibold tracking-wider text-[#999ba0] uppercase hover:text-[#d8d9dc] hover:no-underline">
-                        <div className="flex items-center gap-1.5">
-                          <Sparkles size={12} className="text-[#38bdf8]" />
-                          <span>Layer Effects</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="pb-3 pt-0 text-left">
-                        <LayerEffectsPanel layer={selectedLayer} />
-                      </AccordionContent>
-                    </AccordionItem>
-                  )}
-
-                  {/* 3. Typography (Text Layers) */}
+                  {/* 3. Typography & Effects (Text Layers) */}
                   {selectedLayer.type === "text" && (
-                    <AccordionItem value="appearance" className="border-b border-[#202227]" data-testid="section-text-props">
-                      <AccordionTrigger className="py-2.5 text-[11px] font-semibold tracking-wider text-[#999ba0] uppercase hover:text-[#d8d9dc] hover:no-underline">
-                        <div className="flex items-center gap-1.5">
-                          <Type size={12} className="text-[#38bdf8]" />
-                          <span>Typography</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="pb-3 pt-0 text-left">
-                        {/* Text Content */}
-                        <label className="field mb-2 block">
-                          <span className="field-label">Content</span>
-                          <textarea
-                            className="w-full bg-[#1a1b1e] border border-[#2a2c30] rounded p-1.5 text-[9.5px] text-[#d8d9dc] outline-none resize-none focus:border-[#4b7991]"
-                            rows={2}
-                            value={selectedLayer.text?.content || ""}
-                            onChange={(e) =>
-                              updateLayer(selectedLayer.id, {
-                                text: {
-                                  ...(selectedLayer.text || {
-                                    fontSize: 32,
-                                    fontFamily: "Inter",
-                                    color: "#ffffff",
-                                    align: "left",
-                                  }),
-                                  content: e.target.value,
-                                },
-                              })
-                            }
-                            data-testid="textarea-text-content"
-                          />
-                        </label>
-
-                        {/* Font Family Select */}
-                        <label className="field mb-2 block">
-                          <span className="field-label">Font Family</span>
-                          <span className="select-wrap">
-                            <select
-                              className="select-input"
-                              value={selectedLayer.text?.fontFamily || "Inter, system-ui, sans-serif"}
-                              onChange={(e) =>
-                                updateLayer(selectedLayer.id, {
-                                  text: {
-                                    ...(selectedLayer.text || {
-                                      content: "Heading",
-                                      fontSize: 32,
-                                      color: "#ffffff",
-                                      align: "left",
-                                    }),
-                                    fontFamily: e.target.value,
-                                  },
-                                })
-                              }
-                              data-testid="select-text-font"
-                            >
-                              {FONT_OPTIONS.map((f) => (
-                                <option key={f.value} value={f.value}>
-                                  {f.label}
-                                </option>
-                              ))}
-                            </select>
-                          </span>
-                        </label>
-
-                        {/* Font Size & Color */}
-                        <div className="grid grid-cols-2 gap-2 mb-2">
-                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-7">
-                            <ScrubbableLabel
-                              value={selectedLayer.text?.fontSize || 32}
-                              onChange={(fontSize) =>
-                                updateLayer(selectedLayer.id, {
-                                  text: {
-                                    ...(selectedLayer.text || {
-                                      content: "Text",
-                                      fontFamily: "Inter",
-                                      color: "#ffffff",
-                                      align: "left",
-                                    }),
-                                    fontSize: Math.max(8, Math.min(200, Math.round(fontSize))),
-                                  },
-                                })
-                              }
-                              min={8}
-                              max={200}
-                              step={1}
-                              className="text-[8.5px] font-mono text-[#6c6e75] hover:text-[#38bdf8] transition-colors select-none"
-                              title="Drag horizontal to scrub Font Size (Shift: fast, Alt: precision)"
-                            >
-                              Size
-                            </ScrubbableLabel>
-                            <input
-                              type="number"
-                              min="8"
-                              max="200"
-                              className="w-full bg-transparent text-[9.5px] text-[#d8d9dc] outline-none font-mono"
-                              value={selectedLayer.text?.fontSize || 32}
-                              onChange={(e) =>
-                                updateLayer(selectedLayer.id, {
-                                  text: {
-                                    ...(selectedLayer.text || {
-                                      content: "Text",
-                                      fontFamily: "Inter",
-                                      color: "#ffffff",
-                                      align: "left",
-                                    }),
-                                    fontSize: Math.max(8, parseInt(e.target.value) || 32),
-                                  },
-                                })
-                              }
-                              data-testid="input-text-size"
-                            />
-                          </label>
-
-                          <div className="flex items-center gap-1.5 bg-[#1a1b1e] border border-[#2a2c30] rounded p-1 h-7">
-                            <input
-                              type="color"
-                              className="w-5 h-5 rounded cursor-pointer border-0 p-0 bg-transparent"
-                              value={
-                                selectedLayer.text?.color && selectedLayer.text.color.startsWith("#")
-                                  ? selectedLayer.text.color
-                                  : "#ffffff"
-                              }
-                              onChange={(e) =>
-                                updateLayer(selectedLayer.id, {
-                                  text: {
-                                    ...(selectedLayer.text || {
-                                      content: "Text",
-                                      fontFamily: "Inter",
-                                      fontSize: 32,
-                                      align: "left",
-                                    }),
-                                    color: e.target.value,
-                                  },
-                                })
-                              }
-                              data-testid="input-text-color"
-                            />
-                            <input
-                              type="text"
-                              className="w-full bg-transparent text-[9px] font-mono text-[#d8d9dc] outline-none"
-                              value={selectedLayer.text?.color || "#ffffff"}
-                              onChange={(e) =>
-                                updateLayer(selectedLayer.id, {
-                                  text: {
-                                    ...(selectedLayer.text || {
-                                      content: "Text",
-                                      fontFamily: "Inter",
-                                      fontSize: 32,
-                                      align: "left",
-                                    }),
-                                    color: e.target.value,
-                                  },
-                                })
-                              }
-                            />
-                          </div>
-                        </div>
-
-                        {/* Text Alignment */}
-                        <div className="field">
-                          <span className="field-label">Alignment</span>
-                          <div className="flex items-center gap-1 bg-[#1a1b1e] p-0.5 rounded border border-[#2a2c30]">
-                            {(["left", "center", "right"] as const).map((alignMode) => (
-                              <button
-                                key={alignMode}
-                                type="button"
-                                className={`flex-1 flex items-center justify-center py-1 rounded transition-colors ${
-                                  (selectedLayer.text?.align || "left") === alignMode
-                                    ? "bg-[#25282f] text-white"
-                                    : "text-[#777a82] hover:text-[#c4c6cc]"
-                                }}`}
-                                onClick={() =>
-                                  updateLayer(selectedLayer.id, {
-                                    text: {
-                                      ...(selectedLayer.text || {
-                                        content: "Text",
-                                        fontSize: 32,
-                                        fontFamily: "Inter",
-                                        color: "#ffffff",
-                                      }),
-                                      align: alignMode,
-                                    },
-                                  })
-                                }
-                                data-testid={`button-align-${alignMode}`}
-                                title={`Align ${alignMode}`}
-                              >
-                                {alignMode === "left" && <AlignLeft size={12} />}
-                                {alignMode === "center" && <AlignCenter size={12} />}
-                                {alignMode === "right" && <AlignRight size={12} />}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Kinetic Typography Quick Presets */}
-                        <div className="mt-3 pt-2 border-t border-[#202227]">
-                          <span className="field-label text-[8.5px] text-[#38bdf8] flex items-center gap-1 mb-1.5">
-                            <Zap size={10} className="text-[#38bdf8]" />
-                            <span>Kinetic Typography Presets</span>
-                          </span>
-                          <div className="grid grid-cols-3 gap-1">
-                            <button
-                              type="button"
-                              className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
-                              onClick={() => {
-                                const start = Math.max(0, currentFrame);
-                                addAnimationBlock(activeSceneId, {
-                                  layerId: selectedLayer.id,
-                                  preset: "fade-in",
-                                  startFrame: start,
-                                  endFrame: start + 24,
-                                  easing: "spring",
-                                });
-                              }}
-                            >
-                              Pop & Rise
-                            </button>
-                            <button
-                              type="button"
-                              className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
-                              onClick={() => {
-                                const start = Math.max(0, currentFrame);
-                                addAnimationBlock(activeSceneId, {
-                                  layerId: selectedLayer.id,
-                                  preset: "scale-in",
-                                  startFrame: start,
-                                  endFrame: start + 30,
-                                  easing: "spring",
-                                });
-                              }}
-                            >
-                              Punch Scale
-                            </button>
-                            <button
-                              type="button"
-                              className="py-1 px-1.5 bg-[#16181d] hover:bg-[#20242c] border border-[#272a31] hover:border-[#38bdf8]/50 rounded text-[8px] font-medium text-[#94a3b8] hover:text-white transition-colors"
-                              onClick={() => {
-                                const start = Math.max(0, currentFrame);
-                                addAnimationBlock(activeSceneId, {
-                                  layerId: selectedLayer.id,
-                                  preset: "slide-in-left",
-                                  startFrame: start,
-                                  endFrame: start + 25,
-                                  easing: "spring",
-                                });
-                              }}
-                            >
-                              Kinetic Slide
-                            </button>
-                          </div>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                    <TextLayerPanel
+                      layer={selectedLayer}
+                      updateLayer={updateLayer}
+                      currentFrame={currentFrame}
+                      addAnimationBlock={addAnimationBlock}
+                      activeSceneId={activeSceneId}
+                    />
                   )}
 
-                  {/* Layer Effects (for non-shape layers: rendered after Typography / Appearance) */}
-                  {selectedLayer.type !== "shape" && (
+                  {/* Layer Effects (for non-shape, non-text layers: before Appearance) */}
+                  {selectedLayer.type !== "shape" && selectedLayer.type !== "text" && (
                     <AccordionItem value="layer-effects" className="border-b border-[#202227]" data-testid="section-layer-effects">
                       <AccordionTrigger className="py-2.5 text-[11px] font-semibold tracking-wider text-[#999ba0] uppercase hover:text-[#d8d9dc] hover:no-underline">
                         <div className="flex items-center gap-1.5">
@@ -2813,58 +2378,12 @@ export function Inspector() {
 
                   {/* 4. Image Source (Image Layers) */}
                   {selectedLayer.type === "image" && (
-                    <AccordionItem value="appearance" className="border-b border-[#202227]" data-testid="section-image-props">
-                      <AccordionTrigger className="py-2.5 text-[11px] font-semibold tracking-wider text-[#999ba0] uppercase hover:text-[#d8d9dc] hover:no-underline">
-                        <div className="flex items-center gap-1.5">
-                          <ImageIcon size={12} className="text-[#38bdf8]" />
-                          <span>Image Source</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="pb-3 pt-0 text-left">
-                        <div className="field mb-2">
-                          <span className="field-label">Natural Dimensions</span>
-                          <div
-                            data-testid="text-image-dimensions"
-                            className="text-[9.5px] text-[#a0a3a8] font-mono bg-[#1a1b1e] px-2 py-1.5 rounded border border-[#2a2c30] flex items-center justify-between"
-                          >
-                            <span>Size</span>
-                            <span>
-                              {selectedLayer.image?.naturalWidth || Math.round(selectedLayer.transform.width)} ×{" "}
-                              {selectedLayer.image?.naturalHeight || Math.round(selectedLayer.transform.height)} px
-                            </span>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          className="w-full mt-1 py-1.5 px-2 text-[9.5px] font-medium bg-[#212328] hover:bg-[#2a2d34] text-[#cfd0d4] rounded border border-[#2f323a] transition-colors flex items-center justify-center gap-1.5"
-                          data-testid="button-replace-image"
-                          onClick={() => {
-                            console.log("Replace image stub clicked");
-                          }}
-                        >
-                          <ImageIcon size={11} />
-                          <span>Replace image</span>
-                        </button>
-                      </AccordionContent>
-                    </AccordionItem>
+                    <ImageLayerPanel layer={selectedLayer} />
                   )}
 
                   {/* 5. Group Hierarchy (Group Layers) */}
                   {selectedLayer.type === "group" && (
-                    <AccordionItem value="appearance" className="border-b border-[#202227]" data-testid="section-group-props">
-                      <AccordionTrigger className="py-2.5 text-[11px] font-semibold tracking-wider text-[#999ba0] uppercase hover:text-[#d8d9dc] hover:no-underline">
-                        <div className="flex items-center gap-1.5">
-                          <Layers size={12} className="text-[#38bdf8]" />
-                          <span>Group Hierarchy</span>
-                        </div>
-                      </AccordionTrigger>
-                      <AccordionContent className="pb-3 pt-0 text-left">
-                        <div className="text-[9px] text-[#8e9198] bg-[#1a1b1e] p-2 rounded border border-[#2a2c30]">
-                          Child layers are transformed relative to canvas coordinates enclosed in this group container.
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
+                    <GroupLayerPanel layer={selectedLayer} />
                   )}
                 </Accordion>
               </TabsContent>
@@ -2878,8 +2397,9 @@ export function Inspector() {
                       Effects ({layerBlocks.length})
                     </span>
                     {layerBlocks.length > 0 && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         data-testid="button-save-layer-combo-preset"
                         title="Save all effects on this layer as an animation combo preset"
                         onClick={() => setSavingBlockCombo(layerBlocks)}
@@ -2887,13 +2407,14 @@ export function Inspector() {
                       >
                         <Sparkles size={9} strokeWidth={2} />
                         <span>Save Combo</span>
-                      </button>
+                      </Button>
                     )}
                   </div>
 
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       data-testid="button-animate-open-presets"
                       title="Open Presets Library"
                       onClick={() => openPresets("animations")}
@@ -2901,18 +2422,19 @@ export function Inspector() {
                     >
                       <SlidersHorizontal size={10} strokeWidth={1.8} className="inspector-presets-icon text-[#94a3b8]" />
                       <span>Presets</span>
-                    </button>
+                    </Button>
 
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           data-testid="button-add-animation-block"
                           className="py-1 px-2 text-[9px] font-medium bg-[#1d1f24] hover:bg-[#252830] text-[#38bdf8] rounded border border-[#2d313b] inline-flex items-center gap-1 shadow-sm transition-colors"
                         >
                           <Plus size={10} strokeWidth={2} />
                           <span>Add Effect</span>
-                        </button>
+                        </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent
                         align="end"
@@ -3031,8 +2553,9 @@ export function Inspector() {
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
                                   className="text-[8.5px] font-medium bg-[#1e293b] hover:bg-[#0284c7] text-[#38bdf8] hover:text-white px-1.5 py-0.5 rounded border border-[#0369a1]/40 flex items-center gap-1 transition-colors"
                                   title="Add keyframe at current playhead position"
                                   onClick={() => {
@@ -3063,16 +2586,17 @@ export function Inspector() {
                                 >
                                   <Plus size={9} />
                                   <span>Add @ {currentFrame}f</span>
-                                </button>
-                                <button
-                                  type="button"
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
                                   className="text-[#64748b] hover:text-[#f87171] p-1 rounded hover:bg-[#202227] transition-colors"
                                   title="Delete track"
                                   onClick={() => removeAnimationBlock(block.id)}
                                   data-testid={`button-inspector-del-track-${block.id}`}
                                 >
                                   <Trash2 size={11} />
-                                </button>
+                                </Button>
                               </div>
                             </div>
 
@@ -3089,20 +2613,21 @@ export function Inspector() {
                                       <Diamond size={7} className="text-[#38bdf8] fill-[#38bdf8]" />
                                       <span className="font-semibold text-white">KF #{idx + 1}</span>
                                     </div>
-                                    <button
-                                      type="button"
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
                                       className="text-[#64748b] hover:text-[#ef4444] transition-colors p-0.5"
                                       title="Remove this keyframe"
                                       onClick={() => removeKeyframe(activeSceneId, kfTrack.id, kf.frame)}
                                       data-testid={`btn-del-kf-${kfTrack.id}-${kf.frame}`}
                                     >
                                       <Trash2 size={9} />
-                                    </button>
+                                    </Button>
                                   </div>
 
                                    {/* Frame and Value Row */}
                                   <div className="grid grid-cols-2 gap-2">
-                                    <label className="field mb-0">
+                                    <Label className="field mb-0">
                                       <ScrubbableLabel
                                         value={kf.frame}
                                         onChange={(newF) =>
@@ -3118,7 +2643,7 @@ export function Inspector() {
                                       >
                                         Frame
                                       </ScrubbableLabel>
-                                      <input
+                                      <Input
                                         type="number"
                                         className="text-input font-mono text-[8.5px]"
                                         min={0}
@@ -3131,9 +2656,9 @@ export function Inspector() {
                                           }
                                         }}
                                       />
-                                    </label>
+                                    </Label>
 
-                                    <label className="field mb-0">
+                                    <Label className="field mb-0">
                                       {!isColorProp && typeof kf.value === "number" ? (
                                         <ScrubbableLabel
                                           value={kf.value}
@@ -3165,7 +2690,7 @@ export function Inspector() {
                                               updateKeyframe(activeSceneId, kfTrack.id, kf.frame, { value: e.target.value });
                                             }}
                                           />
-                                          <input
+                                          <Input
                                             type="text"
                                             className="text-input font-mono text-[8.5px] flex-1"
                                             value={String(kf.value)}
@@ -3175,7 +2700,7 @@ export function Inspector() {
                                           />
                                         </div>
                                       ) : (
-                                        <input
+                                        <Input
                                           type="number"
                                           step={kfTrack.property === "opacity" ? 0.05 : 1}
                                           className="text-input font-mono text-[8.5px]"
@@ -3188,27 +2713,31 @@ export function Inspector() {
                                           }}
                                         />
                                       )}
-                                    </label>
+                                    </Label>
                                   </div>
 
                                   {/* Easing row */}
-                                  <label className="field mb-0">
+                                  <Label className="field mb-0">
                                     <span className="field-label text-[8px]">Easing to next KF</span>
-                                    <select
-                                      className="select-input text-[8.5px]"
+                                    <Select
                                       value={kf.easing || "ease-in-out"}
-                                      onChange={(e) => {
+                                      onValueChange={(val) => {
                                         updateKeyframe(activeSceneId, kfTrack.id, kf.frame, {
-                                          easing: e.target.value as any,
+                                          easing: val as any,
                                         });
                                       }}
                                     >
-                                      <option value="ease-in-out">Ease In Out (Cubic)</option>
-                                      <option value="linear">Linear</option>
-                                      <option value="spring">Spring</option>
-                                      <option value="custom">Custom Bezier</option>
-                                    </select>
-                                  </label>
+                                      <SelectTrigger className="select-input text-[8.5px]">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="ease-in-out">Ease In Out (Cubic)</SelectItem>
+                                        <SelectItem value="linear">Linear</SelectItem>
+                                        <SelectItem value="spring">Spring</SelectItem>
+                                        <SelectItem value="custom">Custom Bezier</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </Label>
 
                                   {/* Custom Bezier Curve editor if custom */}
                                   {kf.easing === "custom" && (
@@ -3248,14 +2777,15 @@ export function Inspector() {
                           <div className="flex items-center gap-1">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
                                   className="text-[#64748b] hover:text-[#38bdf8] p-1 rounded hover:bg-[#202227] transition-colors"
                                   title="Block options"
                                   data-testid={`button-block-options-${block.id}`}
                                 >
                                   <MoreVertical size={11} />
-                                </button>
+                                </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent
                                 align="end"
@@ -3280,20 +2810,21 @@ export function Inspector() {
                               </DropdownMenuContent>
                             </DropdownMenu>
 
-                            <button
-                              type="button"
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="text-[#64748b] hover:text-[#f87171] p-1 rounded hover:bg-[#202227] transition-colors"
                               title="Remove animation block"
                               onClick={() => removeAnimationBlock(block.id)}
                             >
                               <Trash2 size={11} />
-                            </button>
+                            </Button>
                           </div>
                         </div>
 
                         {/* Timing Range: Start & End Frames */}
                         <div className="grid grid-cols-2 gap-2">
-                          <label className="field mb-0">
+                          <Label className="field mb-0">
                             <ScrubbableLabel
                               value={block.startFrame}
                               onChange={(startFrame) =>
@@ -3309,7 +2840,7 @@ export function Inspector() {
                             >
                               Start Frame
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
                               className="text-input font-mono text-[9px]"
                               min={0}
@@ -3324,9 +2855,9 @@ export function Inspector() {
                                 }
                               }}
                             />
-                          </label>
+                          </Label>
 
-                          <label className="field mb-0">
+                          <Label className="field mb-0">
                             <ScrubbableLabel
                               value={block.endFrame}
                               onChange={(endFrame) =>
@@ -3342,7 +2873,7 @@ export function Inspector() {
                             >
                               End Frame
                             </ScrubbableLabel>
-                            <input
+                            <Input
                               type="number"
                               className="text-input font-mono text-[9px]"
                               min={block.startFrame + 1}
@@ -3357,7 +2888,7 @@ export function Inspector() {
                                 }
                               }}
                             />
-                          </label>
+                          </Label>
                         </div>
 
                         {/* Duration info */}
@@ -3375,23 +2906,27 @@ export function Inspector() {
                         </div>
 
                         {/* Easing Selector */}
-                        <label className="field mb-0">
+                        <Label className="field mb-0">
                           <span className="field-label text-[8.5px]">Easing</span>
-                          <select
-                            className="select-input text-[9px]"
+                          <Select
                             value={block.easing}
-                            onChange={(e) => {
+                            onValueChange={(val) => {
                               updateAnimationBlock(block.id, {
-                                easing: e.target.value as AnimationBlock["easing"],
+                                easing: val as AnimationBlock["easing"],
                               });
                             }}
                           >
-                            <option value="ease-in-out">Ease In Out (Cubic)</option>
-                            <option value="linear">Linear</option>
-                            <option value="spring">Spring (Damped Physics)</option>
-                            <option value="custom">Custom (Cubic-Bezier)</option>
-                          </select>
-                        </label>
+                            <SelectTrigger className="select-input text-[9px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="ease-in-out">Ease In Out (Cubic)</SelectItem>
+                              <SelectItem value="linear">Linear</SelectItem>
+                              <SelectItem value="spring">Spring (Damped Physics)</SelectItem>
+                              <SelectItem value="custom">Custom (Cubic-Bezier)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </Label>
 
                         {/* Spring description */}
                         {block.easing === "spring" && (
@@ -3424,26 +2959,7 @@ export function Inspector() {
           </div>
         ) : (
           /* Multi-Layer Selection Panel */
-          <div data-testid="multi-selection-view">
-            <span className="section-label">Multiple Selection</span>
-            <div className="bg-[#17191d] border border-[#24272e] rounded p-2.5 mb-3">
-              <div className="text-[10.5px] font-semibold text-[#e2e4e8] mb-1 flex items-center gap-1.5">
-                <Layers size={13} className="text-[#38bdf8]" />
-                <span>{selectedLayerIds.length} Layers Selected</span>
-              </div>
-              <p className="text-[9px] text-[#787b84] leading-relaxed mb-2.5">
-                Move, scale, or group selected items together on the canvas.
-              </p>
-              <button
-                type="button"
-                className="w-full py-1 text-[9px] font-medium bg-[#202227] hover:bg-[#272a31] text-[#cfd0d5] border border-[#2d3038] rounded transition-colors"
-                data-testid="button-deselect-layers"
-                onClick={() => selectLayers([])}
-              >
-                Clear Selection
-              </button>
-            </div>
-          </div>
+          <MultiLayerPanel selectedLayerIds={selectedLayerIds} />
         )}
       </div>
       {shared && (

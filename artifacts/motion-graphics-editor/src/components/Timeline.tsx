@@ -36,6 +36,8 @@ import {
   isKeyframeTrack,
   sampleKeyframeTrack,
 } from "../store/animation-blocks";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -305,6 +307,22 @@ export function Timeline() {
       }
     }
   }, [scrollMs, pxPerMs]);
+
+  // Ctrl/Cmd + wheel zoom on the tracks container
+  const handleTracksWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const el = scrollContainerRef.current;
+      if (!el) return;
+      const store = useTimelineViewStore.getState();
+      const rect = el.getBoundingClientRect();
+      const timeUnderCursor = store.scrollMs + (e.clientX - rect.left) / store.pxPerMs;
+      const candidate = store.pxPerMs * (1 - e.deltaY * 0.001);
+      store.applyZoom(candidate, timeUnderCursor);
+    },
+    [],
+  );
 
   const formatTime = (frame: number) => {
     const totalSecs = frame / fps;
@@ -772,21 +790,25 @@ export function Timeline() {
       {/* 1. Transport Toolbar */}
       <div className="flex items-center justify-between h-9 px-3 bg-secondary/30 border-b border-border text-xs flex-shrink-0">
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setCurrentFrame(0)}
             className="p-1.5 hover:bg-secondary/60 rounded text-muted-foreground hover:text-foreground transition-colors"
             title="Jump to Start"
           >
             <SkipBack className="size-3.5" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setPlaying((v) => !v)}
             className="p-1.5 hover:bg-secondary/60 rounded text-foreground transition-colors"
             title={playing ? "Pause (Space)" : "Play (Space)"}
             data-testid="button-timeline-play"
           >
             {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5 fill-current" />}
-          </button>
+          </Button>
           <div className="h-4 w-px bg-border mx-1" />
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             {formatTime(currentFrame)}{" "}
@@ -797,7 +819,9 @@ export function Timeline() {
 
         {/* Center: Add Scene / Shot button + Assets Stack toggle */}
         <div className="flex items-center gap-1.5">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             type="button"
             onClick={() => addScene()}
             className="px-2.5 py-1 rounded bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary hover:text-foreground text-[10px] font-semibold flex items-center gap-1 transition-colors shadow-xs"
@@ -806,9 +830,11 @@ export function Timeline() {
           >
             <Plus size={11} strokeWidth={2.5} />
             <span>Add Scene</span>
-          </button>
+          </Button>
 
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             type="button"
             onClick={() => setAssetsVisible((v) => !v)}
             className={`px-2.5 py-1 rounded border text-[10px] font-medium flex items-center gap-1 transition-colors ${
@@ -820,12 +846,14 @@ export function Timeline() {
           >
             <Layers size={11} />
             <span>{assetsVisible ? "Hide Assets" : "Show Assets"}</span>
-          </button>
+          </Button>
         </div>
 
         {/* Zoom Controls */}
         <div className="flex items-center gap-1">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => {
               const store = useTimelineViewStore.getState();
               const anchorTimeMs = store.scrollMs + (store.viewportPx / 2) / (store.pxPerMs || 1);
@@ -835,11 +863,13 @@ export function Timeline() {
             title="Zoom Out (Cmd -)"
           >
             <ZoomOut className="size-3.5" />
-          </button>
+          </Button>
           <span className="text-[10px] font-mono tabular-nums text-muted-foreground px-1">
             {pxPerMs > 0 ? `${Math.round((pxPerMs * 1000 / fps) * 10) / 10}x` : '0x'}
           </span>
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => {
               const store = useTimelineViewStore.getState();
               const anchorTimeMs = store.scrollMs + (store.viewportPx / 2) / (store.pxPerMs || 1);
@@ -849,15 +879,17 @@ export function Timeline() {
             title="Zoom In (Cmd +)"
           >
             <ZoomIn className="size-3.5" />
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             type="button"
             onClick={handleFitToView}
             className="px-1.5 py-0.5 rounded hover:bg-secondary/60 border border-border text-muted-foreground hover:text-primary text-[9px] font-mono transition-colors ml-1"
             title="Fit sequence timeline to view"
           >
             Fit
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -879,14 +911,16 @@ export function Timeline() {
             {/* Top Scenes Track Header */}
             <div className="h-10 px-3 flex items-center justify-between text-xs bg-secondary/30 border-b border-border text-foreground font-medium">
               <span className="font-semibold text-foreground text-[11px] truncate">Scenes / Shots</span>
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 type="button"
                 onClick={() => addScene()}
                 className="size-5 rounded hover:bg-secondary/60 text-primary hover:text-foreground flex items-center justify-center transition-colors"
                 title="Add new scene"
               >
                 <Plus size={12} />
-              </button>
+              </Button>
             </div>
 
             {/* Nested Stack under the Scene timeline (Shown only when assetsVisible is true) */}
@@ -917,7 +951,9 @@ export function Timeline() {
                     )}
                   </div>
 
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     type="button"
                     className="size-4 rounded hover:bg-camera-zoom/40 text-camera-zoom flex items-center justify-center transition-colors"
                     title="Add camera move block"
@@ -927,7 +963,7 @@ export function Timeline() {
                     }}
                   >
                     <Plus size={10} />
-                  </button>
+                  </Button>
                 </div>
 
                 {/* Lighting Header */}
@@ -968,16 +1004,20 @@ export function Timeline() {
                   </div>
                   <div className="flex items-center gap-1">
                     {activeScene.audioTrack ? (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         type="button"
                         className="size-4 rounded hover:bg-destructive/30 text-destructive flex items-center justify-center"
                         title="Remove audio track"
                         onClick={() => removeAudioTrack(activeScene.id)}
                       >
                         <Trash2 size={9} />
-                      </button>
+                      </Button>
                     ) : (
-                      <button
+                      <Button
+                        variant="ghost"
+                        size="icon"
                         type="button"
                         className="size-4 rounded hover:bg-secondary/60 text-audio-track hover:text-foreground flex items-center justify-center"
                         title="Add audio track"
@@ -987,7 +1027,7 @@ export function Timeline() {
                         }}
                       >
                         <Plus size={10} />
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -1013,7 +1053,9 @@ export function Timeline() {
                         }}
                       >
                         <div className="flex items-center gap-1.5 truncate min-w-0 pr-1">
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             type="button"
                             className="size-4 flex items-center justify-center text-muted-foreground hover:text-foreground rounded transition-transform"
                             onClick={(e) => {
@@ -1026,7 +1068,7 @@ export function Timeline() {
                               size={10}
                               className={`transition-transform duration-150 ${isLayerExpanded ? "rotate-90 text-primary" : ""}`}
                             />
-                          </button>
+                          </Button>
                           {getLayerIcon(layer.type)}
                           <span className="truncate max-w-[85px] text-[11px]">{layer.name}</span>
                           {keyframeTracks.length > 0 && (
@@ -1040,14 +1082,16 @@ export function Timeline() {
                         {/* Layer Quick Dropdown */}
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               type="button"
                               className="size-4 rounded hover:bg-secondary/60 text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors"
                               onClick={(e) => e.stopPropagation()}
                               title="Add keyframe track or animation block"
                             >
                               <Plus size={10} />
-                            </button>
+                            </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent
                             align="start"
@@ -1111,7 +1155,9 @@ export function Timeline() {
                           >
                             <span className="font-mono truncate">{track.property}</span>
                             <div className="flex items-center gap-1">
-                              <button
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 type="button"
                                 className="size-4 rounded hover:bg-secondary/60 text-primary flex items-center justify-center"
                                 title="Add keyframe at current frame"
@@ -1120,15 +1166,17 @@ export function Timeline() {
                                 }
                               >
                                 <Diamond size={8} className="fill-primary" />
-                              </button>
-                              <button
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 type="button"
                                 className="size-4 rounded hover:bg-destructive/30 text-destructive flex items-center justify-center"
                                 title="Remove track"
                                 onClick={() => removeAnimationBlock(track.id)}
                               >
                                 <Trash2 size={8} />
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         ))}
@@ -1138,7 +1186,9 @@ export function Timeline() {
 
                 {/* Add Layer shortcut button */}
                 <div className="p-2 flex justify-center border-t border-border">
-                  <button
+                  <Button
+                    variant="secondary"
+                    size="sm"
                     type="button"
                     className="w-full py-1 rounded bg-secondary/30 hover:bg-secondary/60 border border-border text-muted-foreground hover:text-primary text-[10px] font-medium flex items-center justify-center gap-1 transition-colors"
                     onClick={() => {
@@ -1151,7 +1201,7 @@ export function Timeline() {
                   >
                     <Plus size={10} />
                     <span>Add Layer to Shot</span>
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -1162,6 +1212,7 @@ export function Timeline() {
         <div
           ref={scrollContainerRef}
           onScroll={handleTracksScroll}
+          onWheel={handleTracksWheel}
           className="flex-1 overflow-x-auto overflow-y-auto relative bg-canvas/80 select-none min-w-0"
         >
           <div
@@ -1265,7 +1316,7 @@ export function Timeline() {
                     <div className="flex items-center gap-1.5 truncate min-w-0 pr-1 select-none">
                       <Film size={11} className={isActive ? "text-primary" : "text-muted-foreground"} />
                       {editingSceneId === scene.id ? (
-                        <input
+                        <Input
                           autoFocus
                           value={editSceneName}
                           onChange={(e) => setEditSceneName(e.target.value)}
@@ -1309,14 +1360,16 @@ export function Timeline() {
                     <div className="flex items-center gap-1 opacity-0 group-hover/clip:opacity-100 transition-opacity">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             type="button"
                             className="size-4 rounded hover:bg-secondary/60 text-foreground flex items-center justify-center"
                             onClick={(e) => e.stopPropagation()}
                             title="Scene options"
                           >
                             <MoreVertical size={10} />
-                          </button>
+                          </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
                           align="end"
@@ -1703,18 +1756,20 @@ export function Timeline() {
                     <Sparkles size={11} />
                     <span>Choose Effect</span>
                   </span>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     type="button"
                     className="text-muted-foreground hover:text-foreground text-sm leading-none"
                     onClick={() => setEffectPickerSlot(null)}
                   >
                     ×
-                  </button>
+                  </Button>
                 </div>
                 <div className="grid grid-cols-2 gap-1">
                   {BLOCK_PRESETS.filter((p) => p.id !== "camera-move").slice(0, 6).map((preset) => (
-                    <button
-                      key={preset.id}
+                    <Button
+                      variant="secondary"
                       type="button"
                       className="p-1.5 rounded bg-secondary/40 hover:bg-primary hover:text-primary-foreground border border-border hover:border-primary text-[10px] font-medium text-left truncate transition-colors"
                       onClick={() => {
@@ -1730,7 +1785,7 @@ export function Timeline() {
                       }}
                     >
                       {preset.label}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>

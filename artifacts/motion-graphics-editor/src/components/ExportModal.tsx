@@ -7,6 +7,8 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import {
   Film,
   Image as ImageIcon,
@@ -296,12 +298,12 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
         {status !== "exporting" && status !== "completed" && (
           <div className="space-y-4 pt-1">
             <div className="space-y-1.5">
-              <label id="export-format-label" className="text-[10px] uppercase font-semibold tracking-wider text-[#788190] block">
+              <Label id="export-format-label" className="text-[10px] uppercase font-semibold tracking-wider text-[#788190] block">
                 Export Format
-              </label>
+              </Label>
               <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-labelledby="export-format-label">
                 {/* WebM Option */}
-                <button
+                <Button
                   type="button"
                   role="radio"
                   aria-checked={format === "webm"}
@@ -324,10 +326,10 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                   <span className="text-[9px] text-[#6b7280] leading-tight">
                     Smooth frame capture
                   </span>
-                </button>
+                </Button>
 
                 {/* GIF Option */}
-                <button
+                <Button
                   type="button"
                   role="radio"
                   aria-checked={format === "gif"}
@@ -350,10 +352,10 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                   <span className="text-[9px] text-[#6b7280] leading-tight">
                     Universal image loop
                   </span>
-                </button>
+                </Button>
 
                 {/* MP4 Option */}
-                <button
+                <Button
                   type="button"
                   role="radio"
                   aria-checked={format === "mp4"}
@@ -376,7 +378,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                   <span className="text-[9px] text-[#6b7280] leading-tight">
                     H.264 WebCodecs
                   </span>
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -403,7 +405,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                   <Settings2 size={11} /> Resolution:
                 </span>
                 <div className="flex items-center gap-1" role="radiogroup" aria-labelledby="resolution-label">
-                  <button
+                  <Button
                     type="button"
                     role="radio"
                     aria-checked={resolutionScale === 2}
@@ -416,8 +418,8 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                     }`}
                   >
                     4K UHD ({nativeWidth * 2}×{nativeHeight * 2})
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     role="radio"
                     aria-checked={resolutionScale === 1}
@@ -430,8 +432,8 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                     }`}
                   >
                     1080p ({nativeWidth}×{nativeHeight})
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     role="radio"
                     aria-checked={Math.abs(resolutionScale - 0.667) < 0.01}
@@ -444,8 +446,8 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                     }`}
                   >
                     720p
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     role="radio"
                     aria-checked={resolutionScale === 0.5}
@@ -458,7 +460,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                     }`}
                   >
                     540p
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -477,7 +479,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                 <div className="flex items-center justify-between text-[9.5px] pt-1 border-t border-[#23262e]">
                   <span id="gif-quality-label" className="text-[#788190]">GIF Quality:</span>
                   <div className="flex items-center gap-1" role="radiogroup" aria-labelledby="gif-quality-label">
-                    <button
+                    <Button
                       type="button"
                       role="radio"
                       aria-checked={gifQuality === 10}
@@ -490,8 +492,8 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                       }`}
                     >
                       High (q10)
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       type="button"
                       role="radio"
                       aria-checked={gifQuality === 20}
@@ -504,7 +506,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
                       }`}
                     >
                       Fast (q20)
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
@@ -602,15 +604,15 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
         <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#20232a]">
           {status === "idle" || status === "error" ? (
             <>
-              <button
+              <Button
                 type="button"
                 aria-label="Close export dialog"
                 onClick={() => onOpenChange(false)}
                 className="px-3 py-1.5 rounded text-[10.5px] text-[#9ca3af] hover:text-white hover:bg-[#1f2229] transition-colors"
               >
                 Close
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 data-testid="button-start-export"
                 disabled={format === "mp4"}
@@ -624,10 +626,10 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
               >
                 <Download size={11} strokeWidth={2.5} />
                 <span>Export {format.toUpperCase()}</span>
-              </button>
+              </Button>
             </>
           ) : status === "exporting" ? (
-            <button
+            <Button
               type="button"
               data-testid="button-cancel-export"
               aria-label="Cancel active export"
@@ -636,18 +638,18 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
             >
               <StopCircle size={11} />
               <span>Cancel Export</span>
-            </button>
+            </Button>
           ) : (
             <>
-              <button
+              <Button
                 type="button"
                 aria-label="Close export dialog"
                 onClick={() => onOpenChange(false)}
                 className="px-3 py-1.5 rounded text-[10.5px] text-[#9ca3af] hover:text-white hover:bg-[#1f2229] transition-colors"
               >
                 Done
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 data-testid="button-download-again"
                 aria-label="Download exported file again"
@@ -656,7 +658,7 @@ export function ExportModal({ open, onOpenChange }: ExportModalProps) {
               >
                 <Download size={11} strokeWidth={2} />
                 <span>Download Again</span>
-              </button>
+              </Button>
             </>
           )}
         </div>

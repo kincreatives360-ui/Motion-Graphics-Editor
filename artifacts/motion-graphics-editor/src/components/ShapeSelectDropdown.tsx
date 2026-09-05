@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useEditorUIStore, type ToolId } from "../store/editor-store";
+import { Button } from "@/components/ui/button";
 
 export function RectIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -152,7 +153,7 @@ export function ShapeSelectDropdown() {
 
   return (
     <div className="relative inline-flex items-center">
-      <button
+      <Button
         ref={triggerButtonRef}
         id="button-shape-select-dropdown"
         className={`tool-button select-dropdown-trigger ${isShapeActive ? "active" : ""} ${
@@ -182,7 +183,7 @@ export function ShapeSelectDropdown() {
         >
           <path d="M0 0l2.5 3 2.5-3z" />
         </svg>
-      </button>
+      </Button>
 
       {dropdownOpen && (
         <div
@@ -196,11 +197,13 @@ export function ShapeSelectDropdown() {
             const isSelected = activeTool === item.id;
             const ItemIcon = item.Icon;
             return (
-              <button
+              <Button
                 key={item.id}
                 id={`menuitem-tool-${item.id}`}
                 role="menuitem"
                 type="button"
+                variant="ghost"
+                size="sm"
                 className={`tool-dropdown-item ${isSelected ? "active" : ""}`}
                 onClick={() => {
                   setActiveTool(item.id);
@@ -215,7 +218,7 @@ export function ShapeSelectDropdown() {
                   <span className="tool-dropdown-item-label">{item.label}</span>
                 </div>
                 <span className="tool-dropdown-item-shortcut">{item.shortcut}</span>
-              </button>
+              </Button>
             );
           })}
         </div>

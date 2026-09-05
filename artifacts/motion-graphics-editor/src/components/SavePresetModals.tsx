@@ -11,6 +11,9 @@ import { saveUserPreset, type UserPreset } from "../persistence/local-store";
 import type { AnimationBlock } from "../store/animation-blocks";
 import type { Layer, Camera } from "../store/editor-store";
 import { Sparkles, LayoutTemplate, Check } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 interface SaveAnimationPresetModalProps {
   open: boolean;
@@ -86,10 +89,10 @@ export function SaveAnimationPresetModal({
 
         <form onSubmit={handleSave} className="space-y-3 py-1">
           <div>
-            <label htmlFor="save-preset-name-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
+            <Label htmlFor="save-preset-name-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
               Preset Name
-            </label>
-            <input
+            </Label>
+            <Input
               id="save-preset-name-input"
               type="text"
               required
@@ -102,10 +105,10 @@ export function SaveAnimationPresetModal({
           </div>
 
           <div>
-            <label htmlFor="save-preset-desc-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
+            <Label htmlFor="save-preset-desc-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
               Description (Optional)
-            </label>
-            <input
+            </Label>
+            <Input
               id="save-preset-desc-input"
               type="text"
               value={description}
@@ -134,16 +137,19 @@ export function SaveAnimationPresetModal({
           </div>
 
           <DialogFooter className="pt-2 border-t border-[#1f222b]">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-label="Cancel saving preset"
               className="px-3 py-1 text-[10px] text-[#9ca1ad] hover:text-white rounded hover:bg-[#20232b] transition-colors"
               onClick={() => onOpenChange(false)}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
+              size="sm"
               disabled={saving || !name.trim()}
               aria-label="Save to animation presets"
               data-testid="button-confirm-save-preset"
@@ -157,7 +163,7 @@ export function SaveAnimationPresetModal({
               ) : (
                 <span>{saving ? "Saving..." : "Save to Presets"}</span>
               )}
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -241,10 +247,10 @@ export function SaveSceneTemplateModal({
 
         <form onSubmit={handleSave} className="space-y-3 py-1">
           <div>
-            <label htmlFor="save-template-name-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
+            <Label htmlFor="save-template-name-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
               Template Name
-            </label>
-            <input
+            </Label>
+            <Input
               id="save-template-name-input"
               type="text"
               required
@@ -257,10 +263,10 @@ export function SaveSceneTemplateModal({
           </div>
 
           <div>
-            <label htmlFor="save-template-desc-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
+            <Label htmlFor="save-template-desc-input" className="text-[9.5px] text-[#9ca1ad] font-medium mb-1 block">
               Description (Optional)
-            </label>
-            <input
+            </Label>
+            <Input
               id="save-template-desc-input"
               type="text"
               value={description}
@@ -289,16 +295,19 @@ export function SaveSceneTemplateModal({
           </div>
 
           <DialogFooter className="pt-2 border-t border-[#1f222b]">
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="sm"
               aria-label="Cancel saving template"
               className="px-3 py-1 text-[10px] text-[#9ca1ad] hover:text-white rounded hover:bg-[#20232b] transition-colors"
               onClick={() => onOpenChange(false)}
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
+              size="sm"
               disabled={saving || !name.trim()}
               aria-label="Save scene template"
               data-testid="button-confirm-save-template"
@@ -312,7 +321,7 @@ export function SaveSceneTemplateModal({
               ) : (
                 <span>{saving ? "Saving..." : "Save Template"}</span>
               )}
-            </button>
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

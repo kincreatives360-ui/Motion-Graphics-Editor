@@ -18,6 +18,8 @@ import {
   Settings,
   X,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface ShortcutItem {
   action: string;
@@ -158,7 +160,7 @@ export function ShortcutsModal({ open, onOpenChange }: ShortcutsModalProps) {
               size={13}
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#64748b] pointer-events-none"
             />
-            <input
+            <Input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -167,13 +169,15 @@ export function ShortcutsModal({ open, onOpenChange }: ShortcutsModalProps) {
               data-testid="input-shortcuts-search"
             />
             {searchQuery && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 onClick={() => setSearchQuery("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-[#64748b] hover:text-white"
               >
                 <X size={12} />
-              </button>
+              </Button>
             )}
           </div>
 
@@ -183,9 +187,11 @@ export function ShortcutsModal({ open, onOpenChange }: ShortcutsModalProps) {
               const Icon = cat.icon;
               const isSelected = selectedCategory === cat.id;
               return (
-                <button
+                <Button
                   key={cat.id}
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setSelectedCategory(cat.id)}
                   className={`px-2.5 py-1 rounded-full text-[10px] font-medium flex items-center gap-1.5 transition-colors whitespace-nowrap ${
                     isSelected
@@ -195,7 +201,7 @@ export function ShortcutsModal({ open, onOpenChange }: ShortcutsModalProps) {
                 >
                   <Icon size={10} />
                   <span>{cat.label}</span>
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -283,13 +289,15 @@ export function ShortcutsModal({ open, onOpenChange }: ShortcutsModalProps) {
             </kbd>
             <span>at any time to close dialogs or deselect layers.</span>
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
             className="px-3 py-1 bg-[#1e232d] hover:bg-[#282f3c] text-white rounded text-[11px] font-medium transition-colors"
           >
             Done
-          </button>
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

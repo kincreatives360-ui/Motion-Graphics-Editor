@@ -26,6 +26,8 @@ import {
 } from "../../store/editor-store";
 import { Slider } from "@/components/ui/slider";
 import { ScrubbableLabel } from "@/hooks/useScrubbableNumber";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export interface LayerEffectsPanelProps {
   layer: Layer;
@@ -139,7 +141,7 @@ export function LayerEffectsPanel({ layer }: LayerEffectsPanelProps) {
         >
           <span className="color-swatch" style={{ backgroundColor: color }} />
           <span>{color.toUpperCase()}</span>
-          <input
+          <Input
             type="color"
             value={color.startsWith("#") ? color : "#000000"}
             onChange={(e) => onChange(e.target.value)}
@@ -162,9 +164,11 @@ export function LayerEffectsPanel({ layer }: LayerEffectsPanelProps) {
       <span className="text-[9px] text-[#999ba0] font-medium">{label}</span>
       <div className="grid grid-cols-2 bg-[#14161b] border border-[#26282e] p-0.5 rounded h-[24px] w-full">
         {options.map((opt) => (
-          <button
+          <Button
             key={opt.value}
             type="button"
+            variant="ghost"
+            size="sm"
             className={`text-[8.5px] py-0 h-4.5 rounded font-medium border transition-all cursor-pointer flex items-center justify-center ${
               value === opt.value
                 ? "bg-[#25282f] text-white border-[#383c44] shadow-xs"
@@ -174,7 +178,7 @@ export function LayerEffectsPanel({ layer }: LayerEffectsPanelProps) {
             data-testid={testIdPrefix ? `${testIdPrefix}-${opt.value}` : undefined}
           >
             {opt.label}
-          </button>
+          </Button>
         ))}
       </div>
     </div>

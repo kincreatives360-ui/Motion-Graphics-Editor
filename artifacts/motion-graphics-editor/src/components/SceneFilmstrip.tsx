@@ -21,6 +21,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface TrimState {
   sceneId: string;
@@ -170,8 +172,9 @@ export function SceneFilmstrip() {
           <span className="text-[9px] text-[#6b7280]">
             Double-click or click Edit Scene to view layers
           </span>
-          <button
+          <Button
             type="button"
+            size="sm"
             className="flex items-center gap-1 px-2.5 py-1 rounded bg-[#0284c7] hover:bg-[#38bdf8] text-white hover:text-[#082f49] text-[9.5px] font-semibold transition-colors shadow-sm"
             onClick={() => setTimelineViewLevel("scene-detail")}
             title="Open selected scene's layer timeline"
@@ -179,7 +182,7 @@ export function SceneFilmstrip() {
           >
             <ZoomIn size={11} strokeWidth={2} />
             <span>Edit Scene</span>
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -253,7 +256,7 @@ export function SceneFilmstrip() {
                     {/* Top Row: Scene Name and Menu */}
                     <div className="flex items-center justify-between w-full">
                       {editingSceneId === sc.id ? (
-                        <input
+                        <Input
                           autoFocus
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
@@ -293,13 +296,15 @@ export function SceneFilmstrip() {
 
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
+                            size="icon"
                             className="p-1 rounded hover:bg-[#282e3d] text-[#64748b] hover:text-white transition-colors"
                             onClick={(e) => e.stopPropagation()}
                           >
                             <MoreVertical size={11} />
-                          </button>
+                          </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent
                           align="end"
@@ -361,8 +366,9 @@ export function SceneFilmstrip() {
               })}
 
               {/* Add Scene Button */}
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 className="h-full px-3 flex flex-col items-center justify-center gap-1 rounded-md border border-dashed border-[#2d323f] hover:border-[#38bdf8] bg-[#111318]/50 hover:bg-[#171b24] text-[#64748b] hover:text-[#38bdf8] transition-all min-w-[70px]"
                 onClick={() => {
                   const newId = addScene();
@@ -373,7 +379,7 @@ export function SceneFilmstrip() {
               >
                 <Plus size={14} strokeWidth={2} />
                 <span className="text-[9px] font-medium">+ Scene</span>
-              </button>
+              </Button>
             </div>
           </div>
 

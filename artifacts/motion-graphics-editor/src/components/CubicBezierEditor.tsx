@@ -1,5 +1,7 @@
 import React, { useRef, useCallback } from "react";
 import { ScrubbableLabel } from "@/hooks/useScrubbableNumber";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 interface CubicBezierEditorProps {
   value?: [number, number, number, number];
@@ -261,7 +263,7 @@ export function CubicBezierEditor({
           >
             X1
           </ScrubbableLabel>
-          <input
+          <Input
             id="bezier-p1-x"
             type="number"
             min={0}
@@ -285,7 +287,7 @@ export function CubicBezierEditor({
           >
             Y1
           </ScrubbableLabel>
-          <input
+          <Input
             id="bezier-p1-y"
             type="number"
             min={-0.4}
@@ -309,7 +311,7 @@ export function CubicBezierEditor({
           >
             X2
           </ScrubbableLabel>
-          <input
+          <Input
             id="bezier-p2-x"
             type="number"
             min={0}
@@ -333,7 +335,7 @@ export function CubicBezierEditor({
           >
             Y2
           </ScrubbableLabel>
-          <input
+          <Input
             id="bezier-p2-y"
             type="number"
             min={-0.4}
@@ -356,9 +358,11 @@ export function CubicBezierEditor({
             preset.curve[2] === x2 &&
             preset.curve[3] === y2;
           return (
-            <button
+            <Button
               key={preset.name}
               type="button"
+              variant="ghost"
+              size="sm"
               aria-pressed={isSelected}
               aria-label={`Apply ${preset.name} easing curve`}
               className={`px-1.5 py-0.5 text-[8.5px] rounded transition-colors ${
@@ -369,7 +373,7 @@ export function CubicBezierEditor({
               onClick={() => onChange([...preset.curve])}
             >
               {preset.name}
-            </button>
+            </Button>
           );
         })}
       </div>

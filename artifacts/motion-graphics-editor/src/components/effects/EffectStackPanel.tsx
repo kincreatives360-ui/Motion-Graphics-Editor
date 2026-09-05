@@ -19,6 +19,7 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { Button } from "@/components/ui/button";
 
 export interface EffectTypeOption<TType extends string = string> {
   type: TType;
@@ -150,14 +151,16 @@ export function EffectStackPanel<TEffect extends EffectItemBase>({
         {allAdded ? (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 disabled
                 className="h-5 w-5 rounded flex items-center justify-center text-[#555861] bg-[#1a1c22] border border-[#26282e] cursor-not-allowed opacity-50 transition-colors"
                 data-testid={`${testIdPrefix}-add-button-disabled`}
               >
                 <Plus size={11} strokeWidth={2} />
-              </button>
+              </Button>
             </TooltipTrigger>
             <TooltipContent side="left" className="text-[10px] bg-[#16181d] text-[#c0c2c8] border-[#292c34]">
               All effects added.
@@ -166,14 +169,16 @@ export function EffectStackPanel<TEffect extends EffectItemBase>({
         ) : (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 className="h-5 w-5 rounded flex items-center justify-center text-[#8e9199] hover:text-[#ffffff] bg-[#1a1c22] hover:bg-[#252830] border border-[#292c34] transition-colors cursor-pointer"
                 data-testid={`${testIdPrefix}-add-button`}
                 title="Add effect"
               >
                 <Plus size={11} strokeWidth={2} />
-              </button>
+              </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-44 bg-[#14161b] border-[#292c34] p-1">
               {unaddedTypes.map((opt) => {
@@ -271,14 +276,16 @@ export function EffectStackPanel<TEffect extends EffectItemBase>({
                   {/* Settings Popover */}
                   <Popover>
                     <PopoverTrigger asChild>
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="icon"
                         className="h-5 w-5 rounded flex items-center justify-center text-[#7e818a] hover:text-[#ffffff] hover:bg-[#22252e] transition-colors cursor-pointer"
                         title="Effect settings"
                         data-testid={`${testIdPrefix}-settings-button-${effect.type}`}
                       >
                         <Settings size={11} />
-                      </button>
+                      </Button>
                     </PopoverTrigger>
                     <PopoverContent
                       side="left"
@@ -298,8 +305,10 @@ export function EffectStackPanel<TEffect extends EffectItemBase>({
                   </Popover>
 
                   {/* Visibility Eye Toggle */}
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => onToggleVisible(effect.id)}
                     className={`h-5 w-5 rounded flex items-center justify-center transition-colors cursor-pointer ${
                       effect.visible
@@ -310,18 +319,20 @@ export function EffectStackPanel<TEffect extends EffectItemBase>({
                     data-testid={`${testIdPrefix}-eye-button-${effect.type}`}
                   >
                     {effect.visible ? <Eye size={11} /> : <EyeOff size={11} />}
-                  </button>
+                  </Button>
 
                   {/* Remove Trash Button */}
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="icon"
                     onClick={() => onRemoveEffect(effect.id)}
                     className="h-5 w-5 rounded flex items-center justify-center text-[#7e818a] hover:text-[#ef4444] hover:bg-[#dc2626]/15 transition-colors cursor-pointer"
                     title="Remove effect"
                     data-testid={`${testIdPrefix}-remove-button-${effect.type}`}
                   >
                     <Trash2 size={11} />
-                  </button>
+                  </Button>
                 </div>
               </div>
             );

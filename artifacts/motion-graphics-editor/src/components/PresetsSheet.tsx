@@ -792,7 +792,7 @@ export function PresetsSheet() {
           </DialogHeader>
 
           <div className="grid grid-cols-1 gap-2.5 py-2">
-            <button
+            <Button
               type="button"
               className="w-full text-left p-2.5 rounded-lg border border-[#2b303c] bg-[#1a1d24] hover:bg-[#222732] hover:border-[#38bdf8]/50 transition-colors group"
               onClick={() => handleConfirmTemplateAction("new")}
@@ -807,9 +807,9 @@ export function PresetsSheet() {
               <p className="text-[9px] text-[#7f8490]">
                 Creates a new clean scene in this project preserving your current composition.
               </p>
-            </button>
+            </Button>
 
-            <button
+            <Button
               type="button"
               className="w-full text-left p-2.5 rounded-lg border border-[#2b303c] bg-[#1a1d24] hover:bg-[#222732] hover:border-[#38bdf8]/50 transition-colors group"
               onClick={() => handleConfirmTemplateAction("merge")}
@@ -824,7 +824,7 @@ export function PresetsSheet() {
               <p className="text-[9px] text-[#7f8490]">
                 Appends the template layers and keyframed animations alongside existing items.
               </p>
-            </button>
+            </Button>
           </div>
 
           <DialogFooter className="pt-2 border-t border-[#20232b]">
