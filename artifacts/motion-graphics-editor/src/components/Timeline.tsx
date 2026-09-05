@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { decodeAudioFile, syncAudioPlayback, stopAudioPlayback } from "../lib/audio-manager";
 import { useEditorStore, useEditorUIStore, type Layer, type Scene } from "../store/editor-store";
+import { useTimelineViewStore } from "../store/timeline-view-store";
 import {
   type AnimationBlock,
   type PresetAnimationBlock,
@@ -146,8 +147,12 @@ export function Timeline() {
   const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
 
-  const timelineZoom = useEditorUIStore((s) => s.timelineZoom);
-  const setTimelineZoom = useEditorUIStore((s) => s.setTimelineZoom);
+  const pxPerMs = useTimelineViewStore((s) => s.pxPerMs);
+  const setViewportPx = useTimelineViewStore((s) => s.setViewportPx);
+  const setTotalDurationMs = useTimelineViewStore((s) => s.setTotalDurationMs);
+  const setScrollMs = useTimelineViewStore((s) => s.setScrollMs);
+  const applyZoom = useTimelineViewStore((s) => s.applyZoom);
+  const setFit = useTimelineViewStore((s) => s.setFit);
 
   // State to toggle whether nested assets stack is visible under scenes
   const [assetsVisible, setAssetsVisible] = useState(true);
@@ -223,10 +228,11 @@ export function Timeline() {
   const activeSceneStartFrame = activeSequenceItem.startFrame;
   const activeSceneDuration = activeSequenceItem.duration;
 
-  // Zoom mapping: zoom 0 = 2px, zoom 50 = 6px, zoom 100 = 16px
-  const zoomNum = timelineZoom ?? 50;
-  const pxPerFrame = Math.max(1.5, 2 + (zoomNum / 100) * 12);
-  const totalWidth = Math.max(800, totalSequenceFrames * pxPerFrame + 240);
+  // Derive pxPerFrame from store's pxPerMs and the active scene's fps
+  // ms = frame / fps * 1000, so px = timeMs * pxPerMs = (frame / fps * 1000) * pxPerMs
+  const pxPerFrame = pxPerMs > 0 ? (1000 / fps) * pxPerMs : 0;
+  const totalDurationMs = (totalSequenceFrames / fps) * 1000;
+  const totalWidth = Math.max(800, totalDurationMs * pxPerMs + 240);
 
   // Synchronize soundtrack audio playback with canvas timeline playhead
   useEffect(() => {
@@ -244,7 +250,27 @@ export function Timeline() {
     };
   }, []);
 
-  const handleTracksScroll = () => {
+  // ResizeObserver on scroll container to update viewportPx
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    setViewportPx(el.clientWidth);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setViewportPx(entry.contentRect.width);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [setViewportPx]);
+
+  // Sync totalDurationMs into the store whenever it changes
+  useEffect(() => {
+    setTotalDurationMs(totalDurationMs);
+  }, [totalDurationMs, setTotalDurationMs]);
+
+  // Mirror scrollLeft → scrollMs on user scroll
+  const handleTracksScroll = useCallback(() => {
     if (isSyncingScrollRef.current) return;
     if (scrollContainerRef.current && leftHeadersRef.current) {
       if (Math.abs(leftHeadersRef.current.scrollTop - scrollContainerRef.current.scrollTop) > 0.5) {
@@ -253,7 +279,10 @@ export function Timeline() {
         isSyncingScrollRef.current = false;
       }
     }
-  };
+    if (pxPerMs > 0 && scrollContainerRef.current) {
+      setScrollMs(scrollContainerRef.current.scrollLeft / pxPerMs);
+    }
+  }, [pxPerMs, setScrollMs]);
 
   const handleHeadersScroll = () => {
     if (isSyncingScrollRef.current) return;
@@ -265,6 +294,17 @@ export function Timeline() {
       }
     }
   };
+
+  // Sync scrollMs from store back to DOM scrollLeft (e.g. when setFit or applyZoom changes scrollMs)
+  const scrollMs = useTimelineViewStore((s) => s.scrollMs);
+  useEffect(() => {
+    if (pxPerMs > 0 && scrollContainerRef.current) {
+      const targetScrollLeft = scrollMs * pxPerMs;
+      if (Math.abs(scrollContainerRef.current.scrollLeft - targetScrollLeft) > 0.5) {
+        scrollContainerRef.current.scrollLeft = targetScrollLeft;
+      }
+    }
+  }, [scrollMs, pxPerMs]);
 
   const formatTime = (frame: number) => {
     const totalSecs = frame / fps;
@@ -333,14 +373,7 @@ export function Timeline() {
 
   // Fit timeline zoom to view container width
   const handleFitToView = () => {
-    if (scrollContainerRef.current && totalSequenceFrames > 0) {
-      const containerWidth = scrollContainerRef.current.clientWidth - 48;
-      if (containerWidth > 100) {
-        const targetPxPerFrame = containerWidth / totalSequenceFrames;
-        const calculatedZoom = Math.max(0, Math.min(100, Math.round(((targetPxPerFrame - 2) / 12) * 100)));
-        setTimelineZoom(calculatedZoom);
-      }
-    }
+    setFit();
   };
 
   // Global block drag handlers
@@ -793,17 +826,25 @@ export function Timeline() {
         {/* Zoom Controls */}
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setTimelineZoom((prev) => Math.max(0, (typeof prev === 'number' ? prev : 50) - 10))}
+            onClick={() => {
+              const store = useTimelineViewStore.getState();
+              const anchorTimeMs = store.scrollMs + (store.viewportPx / 2) / (store.pxPerMs || 1);
+              applyZoom(store.pxPerMs * 0.8, anchorTimeMs);
+            }}
             className="p-1 hover:bg-secondary/60 rounded text-muted-foreground hover:text-foreground transition-colors"
             title="Zoom Out (Cmd -)"
           >
             <ZoomOut className="size-3.5" />
           </button>
           <span className="text-[10px] font-mono tabular-nums text-muted-foreground px-1">
-            {Math.round(pxPerFrame * 10) / 10}x
+            {pxPerMs > 0 ? `${Math.round((pxPerMs * 1000 / fps) * 10) / 10}x` : '0x'}
           </span>
           <button
-            onClick={() => setTimelineZoom((prev) => Math.min(100, (typeof prev === 'number' ? prev : 50) + 10))}
+            onClick={() => {
+              const store = useTimelineViewStore.getState();
+              const anchorTimeMs = store.scrollMs + (store.viewportPx / 2) / (store.pxPerMs || 1);
+              applyZoom(store.pxPerMs * 1.25, anchorTimeMs);
+            }}
             className="p-1 hover:bg-secondary/60 rounded text-muted-foreground hover:text-foreground transition-colors"
             title="Zoom In (Cmd +)"
           >

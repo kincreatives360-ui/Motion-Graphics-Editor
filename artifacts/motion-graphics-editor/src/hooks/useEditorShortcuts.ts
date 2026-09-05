@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useEditorStore, useEditorUIStore } from "../store/editor-store";
+import { useTimelineViewStore } from "../store/timeline-view-store";
 import type { Layer } from "../store/editor-store";
 import { isSvgContent, parseSvgToLayers, importImageFile } from "../lib/svg-importer";
 
@@ -295,19 +296,23 @@ export function useEditorShortcuts() {
       // Timeline Zoom In / Out (Cmd/Ctrl + '+', Cmd/Ctrl + '-')
       if (isCmdOrCtrl && (key === "+" || key === "=")) {
         e.preventDefault();
-        useEditorUIStore.getState().setTimelineZoom((z) => Math.min(100, z + 10));
+        const viewStore = useTimelineViewStore.getState();
+        const anchorTimeMs = viewStore.scrollMs + (viewStore.viewportPx / 2) / (viewStore.pxPerMs || 1);
+        viewStore.applyZoom(viewStore.pxPerMs * 1.25, anchorTimeMs);
         return;
       }
       if (isCmdOrCtrl && (key === "-" || key === "_")) {
         e.preventDefault();
-        useEditorUIStore.getState().setTimelineZoom((z) => Math.max(0, z - 10));
+        const viewStore = useTimelineViewStore.getState();
+        const anchorTimeMs = viewStore.scrollMs + (viewStore.viewportPx / 2) / (viewStore.pxPerMs || 1);
+        viewStore.applyZoom(viewStore.pxPerMs * 0.8, anchorTimeMs);
         return;
       }
 
       // Fit Timeline to View (Shift + Z)
       if (e.shiftKey && !isCmdOrCtrl && !e.altKey && (key === "Z" || e.code === "KeyZ")) {
         e.preventDefault();
-        useEditorUIStore.getState().setTimelineZoom(50);
+        useTimelineViewStore.getState().setFit();
         return;
       }
 
