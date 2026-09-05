@@ -34,8 +34,6 @@ export interface Transform {
   width: number;
   height: number;
   rotation: number; // degrees
-  scaleX?: number;
-  scaleY?: number;
   rotateX?: number; // degrees (-80 to 80, 3D tilt/pitch)
   rotateY?: number; // degrees (-80 to 80, 3D swivel/yaw)
   depth: number; // 0 = camera plane, positive = further away
@@ -186,7 +184,6 @@ export interface Layer {
   type: LayerType;
   transform: Transform;
   opacity: number; // 0-1
-  blendMode?: string;
   visible: boolean;
   locked: boolean;
   mockup?: MockupType;
@@ -586,7 +583,9 @@ export interface EditorUIStoreState {
   isLightSelected: boolean;
   setIsLightSelected: (selected: boolean) => void;
   presetsOpen: boolean;
-  presetsTab: "animations" | "templates";
+  presetsTab: "animations" | "shaders" | "templates";
+  openPresets: (tab?: "animations" | "shaders" | "templates") => void;
+  setPresetsTab: (tab: "animations" | "shaders" | "templates") => void;
   exportModalOpen: boolean;
   saveStatus: SaveStatus;
   setSaveStatus: (status: SaveStatus) => void;
@@ -599,9 +598,7 @@ export interface EditorUIStoreState {
   setPlaying: (playing: boolean | ((prev: boolean) => boolean)) => void;
   setCurrentFrame: (frame: number | ((prev: number) => number)) => void;
   setActiveTool: (tool: ToolId) => void;
-  openPresets: (tab?: "animations" | "templates") => void;
   closePresets: () => void;
-  setPresetsTab: (tab: "animations" | "templates") => void;
   setExportModalOpen: (open: boolean) => void;
   helpOpen: boolean;
   setHelpOpen: (open: boolean) => void;

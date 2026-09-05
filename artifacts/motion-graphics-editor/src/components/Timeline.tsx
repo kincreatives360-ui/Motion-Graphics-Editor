@@ -1,39 +1,35 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import {
-  CirclePlay,
+  Play,
   Pause,
+  SkipBack,
   Plus,
   Layers,
-  Sparkles,
   ChevronRight,
-  MoveHorizontal,
   Trash2,
-  Lock,
-  Eye,
-  EyeOff,
-  Type as TypeIcon,
   Square,
+  Type as TypeIcon,
   Image as ImageIcon,
   Folder,
   Camera as CameraIcon,
-  AlertTriangle,
   Diamond,
   Film,
-  ChevronLeft,
   Sun,
-  Volume2,
-  VolumeX,
   Music,
+  Copy,
+  Edit2,
+  MoreVertical,
+  ZoomIn,
+  ZoomOut,
+  Sparkles,
 } from "lucide-react";
-import { SceneFilmstrip } from "./SceneFilmstrip";
 import { decodeAudioFile, syncAudioPlayback, stopAudioPlayback } from "../lib/audio-manager";
-import { useEditorStore, useEditorUIStore, type Layer } from "../store/editor-store";
+import { useEditorStore, useEditorUIStore, type Layer, type Scene } from "../store/editor-store";
 import {
   type AnimationBlock,
   type PresetAnimationBlock,
   type BlockPreset,
   type AnimatableProperty,
-  type Keyframe,
   type KeyframeTrackBlock,
   BLOCK_PRESETS,
   isKeyframeTrack,
@@ -48,12 +44,72 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 
+export type TrackLayerType =
+  | 'shot'
+  | 'shape'
+  | 'text'
+  | 'image'
+  | 'audio'
+  | 'animation'
+  | 'camera-zoom'
+  | 'light-key'
+  | 'effect';
+
+export interface TimelineClip {
+  id: string;
+  name: string;
+  startFrame: number;
+  durationFrames: number;
+  type: TrackLayerType;
+}
+
+export interface TimelineTrack {
+  id: string;
+  name: string;
+  type: TrackLayerType;
+  clips: TimelineClip[];
+}
+
+export const LAYER_CONFIG: Record<TrackLayerType, { varName: string; border: string; bg: string; text?: string }> = {
+  shot: { varName: 'var(--color-shot)', border: 'border-shot/60', bg: 'bg-shot/15' },
+  shape: { varName: 'var(--color-shape)', border: 'border-[var(--color-shape)]/60', bg: 'bg-[var(--color-shape)]/15' },
+  text: { varName: 'var(--color-text)', border: 'border-[var(--color-text)]/60', bg: 'bg-[var(--color-text)]/15', text: 'text-text' },
+  image: { varName: 'var(--color-primary)', border: 'border-primary/60', bg: 'bg-primary/15' },
+  audio: { varName: 'var(--color-audio-track)', border: 'border-[var(--color-audio-track)]/60', bg: 'bg-audio-track/15' },
+  animation: { varName: 'var(--color-animation)', border: 'border-animation/60', bg: 'bg-animation/15', text: 'text-animation' },
+  'camera-zoom': { varName: 'var(--color-brand-green)', border: 'border-camera-zoom/60', bg: 'bg-camera-zoom/15' },
+  'light-key': { varName: 'var(--color-brand-amber)', border: 'border-light-key/60', bg: 'bg-light-key/15', text: 'text-light-key' },
+  effect: { varName: 'var(--color-effect)', border: 'border-effect/60', bg: 'bg-effect/15', text: 'text-effect' },
+};
+
 interface DragBlockState {
+  sceneId: string;
   blockId: string;
   type: "move" | "resize-left" | "resize-right";
   startClientX: number;
   initialStartFrame: number;
   initialEndFrame: number;
+}
+
+interface SceneTrimState {
+  sceneId: string;
+  edge: "start" | "end";
+  startX: number;
+  initialDuration: number;
+}
+
+interface HoveredEmptySlot {
+  layerId: string;
+  frame: number;
+  leftPx: number;
+  widthPx: number;
+}
+
+interface EffectPickerSlot {
+  layerId: string;
+  frame: number;
+  leftPx: number;
+  topPx: number;
 }
 
 export function Timeline() {
@@ -67,15 +123,18 @@ export function Timeline() {
   const setIsLightSelected = useEditorUIStore((s) => s.setIsLightSelected);
   const activeTool = useEditorUIStore((s) => s.activeTool);
   const setActiveTool = useEditorUIStore((s) => s.setActiveTool);
-  const timelineViewLevel = useEditorUIStore((s) => s.timelineViewLevel);
-  const setTimelineViewLevel = useEditorUIStore((s) => s.setTimelineViewLevel);
-  const isCameraActive = isCameraSelected || activeTool === "camera";
+
   const scenes = useEditorStore((s) => s.scenes);
   const activeSceneId = useEditorStore((s) => s.activeSceneId);
-  const activeSceneIndex = scenes.findIndex((s) => s.id === activeSceneId);
+  const setActiveScene = useEditorStore((s) => s.setActiveScene);
+  const addScene = useEditorStore((s) => s.addScene);
+  const updateScene = useEditorStore((s) => s.updateScene);
+  const deleteScene = useEditorStore((s) => s.deleteScene);
+  const duplicateScene = useEditorStore((s) => s.duplicateScene);
+  const addLayer = useEditorStore((s) => s.addLayer);
+  const removeLayer = useEditorStore((s) => s.removeLayer);
   const selectedLayerIds = useEditorStore((s) => s.selectedLayerIds);
   const selectLayers = useEditorStore((s) => s.selectLayers);
-  const updateSceneLighting = useEditorStore((s) => s.updateSceneLighting);
   const addAnimationBlock = useEditorStore((s) => s.addAnimationBlock);
   const updateAnimationBlock = useEditorStore((s) => s.updateAnimationBlock);
   const removeAnimationBlock = useEditorStore((s) => s.removeAnimationBlock);
@@ -83,31 +142,107 @@ export function Timeline() {
   const addKeyframe = useEditorStore((s) => s.addKeyframe);
   const updateKeyframe = useEditorStore((s) => s.updateKeyframe);
   const removeKeyframe = useEditorStore((s) => s.removeKeyframe);
-  const toggleLayerVisibility = useEditorStore((s) => s.toggleLayerVisibility);
-  const toggleLayerLock = useEditorStore((s) => s.toggleLayerLock);
   const setAudioTrack = useEditorStore((s) => s.setAudioTrack);
   const updateAudioTrack = useEditorStore((s) => s.updateAudioTrack);
   const removeAudioTrack = useEditorStore((s) => s.removeAudioTrack);
 
   const timelineZoom = useEditorUIStore((s) => s.timelineZoom);
   const setTimelineZoom = useEditorUIStore((s) => s.setTimelineZoom);
+
+  // State to toggle whether nested assets stack is visible under scenes
+  const [assetsVisible, setAssetsVisible] = useState(true);
+
   const [expandedLayers, setExpandedLayers] = useState<Record<string, boolean>>({});
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    layerId: string | null;
-    frame: number;
+  const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [editSceneName, setEditSceneName] = useState("");
+
+  const [sceneTrimState, setSceneTrimState] = useState<SceneTrimState | null>(null);
+  const [hoveredEmptySlot, setHoveredEmptySlot] = useState<HoveredEmptySlot | null>(null);
+  const [effectPickerSlot, setEffectPickerSlot] = useState<EffectPickerSlot | null>(null);
+  const [hoveredRulerFrame, setHoveredRulerFrame] = useState<number | null>(null);
+  const [activeDragFeedback, setActiveDragFeedback] = useState<{
+    blockId: string;
+    type: "move" | "resize-left" | "resize-right";
+    startFrame: number;
+    endFrame: number;
+    duration: number;
   } | null>(null);
 
   const audioFileInputRef = useRef<HTMLInputElement>(null);
-  const audioDragRef = useRef<{ startX: number; initialOffset: number } | null>(null);
-  const [isDraggingAudio, setIsDraggingAudio] = useState(false);
+  const audioTargetSceneIdRef = useRef<string | null>(null);
+  const audioDragRef = useRef<{ startX: number; initialOffset: number; sceneId: string } | null>(null);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const leftHeadersRef = useRef<HTMLDivElement>(null);
   const isSyncingScrollRef = useRef(false);
   const dragRef = useRef<DragBlockState | null>(null);
   const isScrubbingRef = useRef(false);
+
+  // Active scene fallback
+  const activeScene = scenes.find((s) => s.id === activeSceneId) || scenes[0] || {
+    id: "default",
+    name: "Scene 1",
+    durationFrames: 180,
+    fps: 30,
+    layers: [],
+    animationBlocks: [],
+    camera: { x: 0, y: 0, z: 800, fov: 45, focusDistance: 800 },
+    effects: [],
+    effectsOrder: [],
+  };
+
+  const fps = activeScene?.fps || 30;
+
+  // Compute horizontal sequential layout for all scenes (beside each other)
+  let accumulatedFrames = 0;
+  const sceneSequence = scenes.map((scene) => {
+    const duration = Math.max(15, scene.durationFrames || 180);
+    const startFrame = accumulatedFrames;
+    const endFrame = startFrame + duration;
+    accumulatedFrames += duration;
+    return {
+      scene,
+      startFrame,
+      endFrame,
+      duration,
+    };
+  });
+
+  const totalSequenceFrames = Math.max(180, accumulatedFrames);
+
+  // Find active scene start frame and span
+  const activeSequenceItem =
+    sceneSequence.find((item) => item.scene.id === activeSceneId) ||
+    sceneSequence[0] || {
+      scene: activeScene,
+      startFrame: 0,
+      endFrame: activeScene.durationFrames || 180,
+      duration: activeScene.durationFrames || 180,
+    };
+
+  const activeSceneStartFrame = activeSequenceItem.startFrame;
+  const activeSceneDuration = activeSequenceItem.duration;
+
+  // Zoom mapping: zoom 0 = 2px, zoom 50 = 6px, zoom 100 = 16px
+  const zoomNum = timelineZoom ?? 50;
+  const pxPerFrame = Math.max(1.5, 2 + (zoomNum / 100) * 12);
+  const totalWidth = Math.max(800, totalSequenceFrames * pxPerFrame + 240);
+
+  // Synchronize soundtrack audio playback with canvas timeline playhead
+  useEffect(() => {
+    syncAudioPlayback(
+      activeScene?.audioTrack,
+      playing,
+      currentFrame,
+      activeScene?.fps || 30,
+    );
+  }, [playing, currentFrame, activeScene?.audioTrack, activeScene?.fps]);
+
+  useEffect(() => {
+    return () => {
+      stopAudioPlayback();
+    };
+  }, []);
 
   const handleTracksScroll = () => {
     if (isSyncingScrollRef.current) return;
@@ -131,56 +266,17 @@ export function Timeline() {
     }
   };
 
-  const activeScene = scenes.find((s) => s.id === activeSceneId) || scenes[0];
-  const durationFrames = activeScene?.durationFrames || 180;
-  const fps = activeScene?.fps || 30;
-  const layers = activeScene?.layers || [];
-  const animationBlocks = activeScene?.animationBlocks || [];
-  const cameraBlocks = animationBlocks.filter(
-    (b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || b.layerId === null),
-  );
-  const hasDeviceMockup = layers.some((l) => Boolean(l.mockup && l.mockup !== "none"));
-  const isLightActive = isLightSelected;
-
-  // Zoom to pxPerFrame mapping: zoom 0 = 2px, zoom 50 = 6px, zoom 100 = 16px
-  const zoomNum = timelineZoom ?? 54;
-  const pxPerFrame = Math.max(1.5, 2 + (zoomNum / 100) * 12);
-  const totalWidth = Math.max(800, durationFrames * pxPerFrame + 120);
-
-  // Time formatting
   const formatTime = (frame: number) => {
-    const totalSeconds = frame / fps;
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = Math.floor(totalSeconds % 60);
-    const sub = Math.floor((totalSeconds % 1) * 100);
-    return `${mins}:${secs.toString().padStart(2, "0")}.${sub.toString().padStart(2, "0")}`;
+    const totalSecs = frame / fps;
+    const mins = Math.floor(totalSecs / 60);
+    const secs = Math.floor(totalSecs % 60);
+    const remFrames = frame % fps;
+    return `${mins.toString().padStart(2, "0")}:${secs
+      .toString()
+      .padStart(2, "0")}:${remFrames.toString().padStart(2, "0")}`;
   };
 
-  const formatTimeSecondsOnly = (frame: number) => {
-    const totalSeconds = frame / fps;
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = Math.floor(totalSeconds % 60);
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
-
-  // Synchronize soundtrack audio playback with canvas timeline playhead
-  useEffect(() => {
-    syncAudioPlayback(
-      activeScene?.audioTrack,
-      playing,
-      currentFrame,
-      activeScene?.fps || 30,
-    );
-  }, [playing, currentFrame, activeScene?.audioTrack, activeScene?.fps]);
-
-  // Stop soundtrack audio playback on unmount
-  useEffect(() => {
-    return () => {
-      stopAudioPlayback();
-    };
-  }, []);
-
-  // Convert clientX in ruler/tracks to frame
+  // Convert clientX in ruler/tracks to global frame
   const getFrameFromClientX = useCallback(
     (clientX: number) => {
       if (!scrollContainerRef.current) return 0;
@@ -188,9 +284,9 @@ export function Timeline() {
       const scrollLeft = scrollContainerRef.current.scrollLeft;
       const offsetX = clientX - rect.left + scrollLeft;
       const frame = Math.round(offsetX / pxPerFrame);
-      return Math.max(0, Math.min(durationFrames, frame));
+      return Math.max(0, Math.min(totalSequenceFrames, frame));
     },
-    [pxPerFrame, durationFrames],
+    [pxPerFrame, totalSequenceFrames],
   );
 
   // Ruler scrub handlers
@@ -200,12 +296,27 @@ export function Timeline() {
     (e.target as Element).setPointerCapture(e.pointerId);
     const frame = getFrameFromClientX(e.clientX);
     setCurrentFrame(frame);
+
+    // Auto-select scene that contains this frame
+    const matchingScene = sceneSequence.find(
+      (item) => frame >= item.startFrame && frame <= item.endFrame,
+    );
+    if (matchingScene && matchingScene.scene.id !== activeSceneId) {
+      setActiveScene(matchingScene.scene.id);
+    }
   };
 
   const handleRulerPointerMove = (e: React.PointerEvent) => {
     if (isScrubbingRef.current) {
       const frame = getFrameFromClientX(e.clientX);
       setCurrentFrame(frame);
+
+      const matchingScene = sceneSequence.find(
+        (item) => frame >= item.startFrame && frame <= item.endFrame,
+      );
+      if (matchingScene && matchingScene.scene.id !== activeSceneId) {
+        setActiveScene(matchingScene.scene.id);
+      }
     }
   };
 
@@ -220,26 +331,50 @@ export function Timeline() {
     }
   };
 
+  // Fit timeline zoom to view container width
+  const handleFitToView = () => {
+    if (scrollContainerRef.current && totalSequenceFrames > 0) {
+      const containerWidth = scrollContainerRef.current.clientWidth - 48;
+      if (containerWidth > 100) {
+        const targetPxPerFrame = containerWidth / totalSequenceFrames;
+        const calculatedZoom = Math.max(0, Math.min(100, Math.round(((targetPxPerFrame - 2) / 12) * 100)));
+        setTimelineZoom(calculatedZoom);
+      }
+    }
+  };
+
   // Global block drag handlers
   const startBlockDrag = (
     e: React.PointerEvent,
+    sceneId: string,
     block: AnimationBlock,
     type: "move" | "resize-left" | "resize-right",
+    sceneDuration: number,
   ) => {
     e.stopPropagation();
     if (e.button !== 0) return;
 
+    setActiveScene(sceneId);
     if (block.layerId) {
       selectLayers([block.layerId]);
     }
 
     dragRef.current = {
+      sceneId,
       blockId: block.id,
       type,
       startClientX: e.clientX,
       initialStartFrame: block.startFrame,
       initialEndFrame: block.endFrame,
     };
+
+    setActiveDragFeedback({
+      blockId: block.id,
+      type,
+      startFrame: block.startFrame,
+      endFrame: block.endFrame,
+      duration: block.endFrame - block.startFrame,
+    });
 
     const handlePointerMove = (moveEvent: PointerEvent) => {
       if (!dragRef.current) return;
@@ -251,8 +386,15 @@ export function Timeline() {
       if (type === "move") {
         const duration = initialEndFrame - initialStartFrame;
         let newStart = initialStartFrame + deltaFrames;
-        newStart = Math.max(0, Math.min(durationFrames - duration, newStart));
+        newStart = Math.max(0, Math.min(sceneDuration - duration, newStart));
         const newEnd = newStart + duration;
+        setActiveDragFeedback({
+          blockId,
+          type,
+          startFrame: newStart,
+          endFrame: newEnd,
+          duration,
+        });
         updateAnimationBlock(blockId, {
           startFrame: newStart,
           endFrame: newEnd,
@@ -260,16 +402,31 @@ export function Timeline() {
       } else if (type === "resize-left") {
         let newStart = initialStartFrame + deltaFrames;
         newStart = Math.max(0, Math.min(initialEndFrame - 1, newStart));
+        setActiveDragFeedback({
+          blockId,
+          type,
+          startFrame: newStart,
+          endFrame: initialEndFrame,
+          duration: initialEndFrame - newStart,
+        });
         updateAnimationBlock(blockId, { startFrame: newStart });
       } else if (type === "resize-right") {
         let newEnd = initialEndFrame + deltaFrames;
-        newEnd = Math.max(initialStartFrame + 1, Math.min(durationFrames, newEnd));
+        newEnd = Math.max(initialStartFrame + 1, Math.min(sceneDuration, newEnd));
+        setActiveDragFeedback({
+          blockId,
+          type,
+          startFrame: initialStartFrame,
+          endFrame: newEnd,
+          duration: newEnd - initialStartFrame,
+        });
         updateAnimationBlock(blockId, { endFrame: newEnd });
       }
     };
 
     const handlePointerUp = () => {
       dragRef.current = null;
+      setActiveDragFeedback(null);
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
     };
@@ -278,11 +435,52 @@ export function Timeline() {
     window.addEventListener("pointerup", handlePointerUp);
   };
 
+  // Scene Trim Handler
+  const handleSceneTrimStart = (
+    e: React.PointerEvent,
+    scene: Scene,
+    edge: "start" | "end",
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+
+    const initialDur = scene.durationFrames || 180;
+    setSceneTrimState({
+      sceneId: scene.id,
+      edge,
+      startX: e.clientX,
+      initialDuration: initialDur,
+    });
+
+    const handleTrimMove = (moveEvent: PointerEvent) => {
+      const deltaX = moveEvent.clientX - e.clientX;
+      const deltaFrames = Math.round(deltaX / pxPerFrame);
+      let newDuration = initialDur;
+      if (edge === "end") {
+        newDuration = Math.max(15, initialDur + deltaFrames);
+      } else {
+        newDuration = Math.max(15, initialDur - deltaFrames);
+      }
+      updateScene(scene.id, { durationFrames: newDuration });
+    };
+
+    const handleTrimUp = (upEvent: PointerEvent) => {
+      setSceneTrimState(null);
+      window.removeEventListener("pointermove", handleTrimMove);
+      window.removeEventListener("pointerup", handleTrimUp);
+    };
+
+    window.addEventListener("pointermove", handleTrimMove);
+    window.addEventListener("pointerup", handleTrimUp);
+  };
+
   // Add camera block helper
-  const handleAddCameraBlock = () => {
-    const start = Math.min(durationFrames - 10, currentFrame);
-    const end = Math.min(durationFrames, start + 45);
-    addAnimationBlock(activeSceneId, {
+  const handleAddCameraBlock = (sceneId: string, sceneDuration: number) => {
+    setActiveScene(sceneId);
+    const start = Math.min(sceneDuration - 10, currentFrame);
+    const end = Math.min(sceneDuration, start + 45);
+    addAnimationBlock(sceneId, {
       layerId: null,
       preset: "camera-move",
       startFrame: start,
@@ -291,17 +489,21 @@ export function Timeline() {
       cameraTo: { x: 200, y: 0, z: 300, fov: 0 },
     });
     selectLayers([]);
+    setIsLightSelected(false);
+    setIsCameraSelected(true);
+    setActiveTool("camera");
   };
 
   // Add block helper
-  const handleAddBlock = (layerId: string | null, preset: BlockPreset) => {
+  const handleAddBlock = (sceneId: string, layerId: string | null, preset: BlockPreset, sceneDuration: number, customStart?: number) => {
+    setActiveScene(sceneId);
     if (preset === "camera-move" || !layerId) {
-      handleAddCameraBlock();
+      handleAddCameraBlock(sceneId, sceneDuration);
       return;
     }
-    const start = Math.min(durationFrames - 10, currentFrame);
-    const end = Math.min(durationFrames, start + 30);
-    addAnimationBlock(activeSceneId, {
+    const start = customStart !== undefined ? customStart : Math.min(sceneDuration - 10, currentFrame);
+    const end = Math.min(sceneDuration, start + 30);
+    addAnimationBlock(sceneId, {
       layerId,
       preset,
       startFrame: start,
@@ -313,8 +515,10 @@ export function Timeline() {
 
   const startKeyframeDrag = (
     e: React.PointerEvent,
+    sceneId: string,
     track: KeyframeTrackBlock,
     initialFrame: number,
+    sceneDuration: number,
   ) => {
     e.stopPropagation();
     if (e.button !== 0) return;
@@ -328,9 +532,9 @@ export function Timeline() {
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const deltaPixels = moveEvent.clientX - startClientX;
       const deltaFrames = Math.round(deltaPixels / pxPerFrame);
-      const newFrame = Math.max(0, Math.min(durationFrames, initialFrame + deltaFrames));
+      const newFrame = Math.max(0, Math.min(sceneDuration, initialFrame + deltaFrames));
       if (newFrame !== lastFrame) {
-        updateKeyframe(activeSceneId, track.id, lastFrame, { frame: newFrame });
+        updateKeyframe(sceneId, track.id, lastFrame, { frame: newFrame });
         lastFrame = newFrame;
       }
     };
@@ -394,32 +598,67 @@ export function Timeline() {
   };
 
   const handleAddKeyframeToTrack = (
+    scene: Scene,
     track: KeyframeTrackBlock,
     targetFrame: number = currentFrame,
   ) => {
-    const layer = layers.find((l) => l.id === track.layerId);
+    const layer = scene.layers.find((l) => l.id === track.layerId);
     if (!layer) return;
     const existingVal = sampleKeyframeTrack(track, targetFrame);
     const val =
       existingVal !== undefined
         ? existingVal
         : getPropertyValueAtFrame(layer, track.property);
-    addKeyframe(activeSceneId, track.id, {
+    addKeyframe(scene.id, track.id, {
       frame: targetFrame,
       value: val,
       easing: "ease-in-out",
     });
   };
 
-  const handleAddTrack = (layerId: string, property: AnimatableProperty) => {
-    addKeyframeTrack(activeSceneId, layerId, property);
+  const handleAddTrack = (sceneId: string, layerId: string, property: AnimatableProperty) => {
+    setActiveScene(sceneId);
+    addKeyframeTrack(sceneId, layerId, property);
     setExpandedLayers((prev) => ({ ...prev, [layerId]: true }));
     selectLayers([layerId]);
   };
 
-  // Track ruler tick intervals
+  // Pointer move inside a layer track to detect empty spots and show dotted insertion line
+  const handleLayerTrackPointerMove = (e: React.PointerEvent, layer: Layer) => {
+    if (!scrollContainerRef.current) return;
+    const rect = scrollContainerRef.current.getBoundingClientRect();
+    const scrollLeft = scrollContainerRef.current.scrollLeft;
+    const clickX = e.clientX - rect.left + scrollLeft;
+    const globalFrame = Math.round(clickX / pxPerFrame);
+    const localFrame = globalFrame - activeSceneStartFrame;
+
+    if (localFrame < 0 || localFrame >= activeSceneDuration) {
+      setHoveredEmptySlot(null);
+      return;
+    }
+
+    const layerBlocks = activeSceneBlocks.filter((b) => b.layerId === layer.id && !isKeyframeTrack(b));
+    const isOverExistingBlock = layerBlocks.some(
+      (b) => localFrame >= b.startFrame && localFrame <= b.endFrame,
+    );
+
+    if (isOverExistingBlock) {
+      setHoveredEmptySlot(null);
+    } else {
+      const snapFrame = Math.max(0, Math.min(activeSceneDuration - 15, Math.floor(localFrame / 5) * 5));
+      const effectWidthFrames = Math.min(30, activeSceneDuration - snapFrame);
+      setHoveredEmptySlot({
+        layerId: layer.id,
+        frame: snapFrame,
+        leftPx: (activeSceneStartFrame + snapFrame) * pxPerFrame,
+        widthPx: effectWidthFrames * pxPerFrame,
+      });
+    }
+  };
+
+  // Ruler tick intervals
   const majorTickStep = pxPerFrame >= 8 ? 15 : pxPerFrame >= 4 ? 30 : 60;
-  const ticksCount = Math.ceil(durationFrames / majorTickStep);
+  const ticksCount = Math.ceil(totalSequenceFrames / majorTickStep);
 
   const getLayerIcon = (type: Layer["type"]) => {
     switch (type) {
@@ -436,13 +675,12 @@ export function Timeline() {
     }
   };
 
-  const getPresetColor = (preset: any) => {
+  const getClipType = (preset: any): TrackLayerType => {
     const p = typeof preset === "string" ? preset : preset?.id || "";
-    if (p === "camera-move") return "bg-[#047857] border-[#10b981] text-[#ecfdf5]";
-    if (p.startsWith("fade")) return "bg-[#0369a1] border-[#0284c7] text-[#e0f2fe]";
-    if (p.startsWith("slide")) return "bg-[#4f46e5] border-[#6366f1] text-[#e0e7ff]";
-    if (p.startsWith("scale")) return "bg-[#059669] border-[#10b981] text-[#ecfdf5]";
-    return "bg-[#d97706] border-[#f59e0b] text-[#fef3c7]";
+    if (p === "camera-move") return "camera-zoom";
+    if (p.startsWith("fade") || p.startsWith("slide")) return "animation";
+    if (p.startsWith("scale")) return "effect";
+    return "animation";
   };
 
   const getPresetLabel = (preset: any) => {
@@ -454,1125 +692,1022 @@ export function Timeline() {
     return "effect";
   };
 
+  // Active scene assets data
+  const activeSceneLayers = activeScene.layers || [];
+  const activeSceneBlocks = activeScene.animationBlocks || [];
+  const activeCameraBlocks = activeSceneBlocks.filter(
+    (b): b is PresetAnimationBlock => !isKeyframeTrack(b) && (b.preset === "camera-move" || b.layerId === null),
+  );
+  const activeHasMockup = activeSceneLayers.some((l) => Boolean(l.mockup && l.mockup !== "none"));
+  const isCameraActiveInThisScene = isCameraSelected || activeTool === "camera";
+  const isLightActiveInThisScene = isLightSelected;
+
   return (
-    <section
-      className="timeline flex flex-col h-full bg-[#0f1012] border-t border-[#191b1e] select-none"
+    <div
+      className="flex flex-col w-full h-full bg-background border-t border-border select-none font-sans min-h-0 relative overflow-hidden"
       aria-label="Timeline"
     >
-      {/* Timeline Top Control Bar */}
-      <div className="timeline-top flex items-center justify-between px-3 h-9 border-b border-[#191b1e] bg-[#121316]">
-        {/* Play/Pause & Frame Nav */}
+      {/* Hidden audio input */}
+      <input
+        ref={audioFileInputRef}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        onChange={async (e) => {
+          const file = e.target.files?.[0];
+          const targetSceneId = audioTargetSceneIdRef.current || activeSceneId;
+          if (file && targetSceneId) {
+            try {
+              const decoded = await decodeAudioFile(file);
+              setAudioTrack(targetSceneId, {
+                id: `audio-${Date.now()}`,
+                name: file.name.replace(/\.[^/.]+$/, ""),
+                url: decoded.url,
+                duration: decoded.duration,
+                volume: 1,
+                muted: false,
+                offsetFrames: 0,
+                waveformData: decoded.waveformData,
+              });
+            } catch (err) {
+              console.warn("Failed to load audio file:", err);
+            }
+          }
+        }}
+      />
+
+      {/* 1. Transport Toolbar */}
+      <div className="flex items-center justify-between h-9 px-3 bg-secondary/30 border-b border-border text-xs flex-shrink-0">
         <div className="flex items-center gap-2">
           <button
-            className="timeline-playhead-button p-1 rounded hover:bg-[#202227] text-[#d1d4dc] transition-colors"
-            type="button"
-            aria-label={playing ? "Pause timeline" : "Play timeline"}
-            title={playing ? "Pause timeline" : "Play timeline"}
-            data-testid="button-timeline-play"
+            onClick={() => setCurrentFrame(0)}
+            className="p-1.5 hover:bg-secondary/60 rounded text-muted-foreground hover:text-foreground transition-colors"
+            title="Jump to Start"
+          >
+            <SkipBack className="size-3.5" />
+          </button>
+          <button
             onClick={() => setPlaying((v) => !v)}
+            className="p-1.5 hover:bg-secondary/60 rounded text-foreground transition-colors"
+            title={playing ? "Pause (Space)" : "Play (Space)"}
+            data-testid="button-timeline-play"
           >
-            {playing ? (
-              <Pause size={13} strokeWidth={2} className="text-[#38bdf8]" />
-            ) : (
-              <CirclePlay size={13} strokeWidth={2} />
-            )}
+            {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5 fill-current" />}
           </button>
-
-          {/* Time text / Current Frame readout */}
-          <div className="flex items-center gap-2 pl-1 font-mono text-[9.5px]">
-            <span
-              className="time-zero text-[#9ca3af] font-medium"
-              data-testid="text-time-zero"
-            >
-              {formatTimeSecondsOnly(currentFrame)}
-            </span>
-            <span className="text-[#4b5563]">/</span>
-            <span className="text-[#6b7280]">
-              {currentFrame}f ({durationFrames}f @ {fps}fps)
-            </span>
-          </div>
+          <div className="h-4 w-px bg-border mx-1" />
+          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+            {formatTime(currentFrame)}{" "}
+            <span className="opacity-40">/</span> {formatTime(totalSequenceFrames)}
+            <span className="opacity-50 ml-1.5 text-[10px]">({currentFrame}f)</span>
+          </span>
         </div>
 
-        {/* Timeline View Level Switcher (Whole Video vs Scene Detail) */}
-        <div className="flex items-center gap-1 bg-[#16181d] border border-[#232730] p-0.5 rounded-md">
+        {/* Center: Add Scene / Shot button + Assets Stack toggle */}
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
-            className={`px-2 py-0.5 rounded text-[9px] font-medium flex items-center gap-1 transition-colors ${
-              timelineViewLevel === "all-scenes"
-                ? "bg-[#0284c7] text-white shadow-sm font-semibold"
-                : "text-[#94a3b8] hover:text-white"
-            }`}
-            onClick={() => setTimelineViewLevel("all-scenes")}
-            data-testid="button-timeline-view-all-scenes"
-            title="Zoomed-out Whole Video level: view and reorder all scenes"
+            onClick={() => addScene()}
+            className="px-2.5 py-1 rounded bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary hover:text-foreground text-[10px] font-semibold flex items-center gap-1 transition-colors shadow-xs"
+            title="Add a new Scene/Shot to the timeline"
+            data-testid="button-add-scene"
           >
-            <Film size={10} />
-            <span>Whole Video</span>
+            <Plus size={11} strokeWidth={2.5} />
+            <span>Add Scene</span>
           </button>
+
           <button
             type="button"
-            className={`px-2 py-0.5 rounded text-[9px] font-medium flex items-center gap-1 transition-colors ${
-              timelineViewLevel === "scene-detail"
-                ? "bg-[#0284c7] text-white shadow-sm font-semibold"
-                : "text-[#94a3b8] hover:text-white"
+            onClick={() => setAssetsVisible((v) => !v)}
+            className={`px-2.5 py-1 rounded border text-[10px] font-medium flex items-center gap-1 transition-colors ${
+              assetsVisible
+                ? "bg-input/30 border-primary/40 text-primary"
+                : "bg-secondary/20 border-border text-muted-foreground hover:text-foreground"
             }`}
-            onClick={() => setTimelineViewLevel("scene-detail")}
-            data-testid="button-timeline-view-scene-detail"
-            title={`Zoomed-in Scene level: ${activeScene?.name || "Scene"}`}
+            title={assetsVisible ? "Hide nested assets (Double-click scene bar)" : "Show nested assets (Double-click scene bar)"}
           >
-            <Layers size={10} />
-            <span className="truncate max-w-[90px]">{activeScene?.name || "Scene"}</span>
+            <Layers size={11} />
+            <span>{assetsVisible ? "Hide Assets" : "Show Assets"}</span>
           </button>
         </div>
 
-        {/* Global Add Animation Block Dropdown */}
-        <div className="flex items-center gap-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="py-1 px-2.5 text-[9px] font-medium bg-[#1a1c20] hover:bg-[#24272e] text-[#cbd5e1] rounded border border-[#272a31] transition-colors flex items-center gap-1.5 shadow-sm"
-              >
-                <Plus size={10} strokeWidth={2} />
-                <span>Add Effect</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              className="w-48 max-h-[300px] overflow-y-auto bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[150px] shadow-2xl rounded-md p-1 outline-none"
-            >
-              <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#717684] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
-                <span className="flex items-center gap-1.5">
-                  <Sparkles size={8} className="text-[#c084fc]" />
-                  <span>Animation Presets</span>
-                </span>
-                <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">blocks</span>
-              </DropdownMenuLabel>
-              <div className="space-y-0.5">
-                {BLOCK_PRESETS.map((preset) => (
-                  <DropdownMenuItem
-                    key={preset.id}
-                    className="cursor-pointer hover:bg-[#20242e] hover:text-white focus:bg-[#20242e] focus:text-white px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
-                    onClick={() =>
-                      handleAddBlock(
-                        selectedLayerIds.length === 1 ? selectedLayerIds[0] : null,
-                        preset.id,
-                      )
-                    }
-                  >
-                    <span className="capitalize">{preset.label}</span>
-                    <span className="text-[7.5px] text-[#4b5563] font-mono">preset</span>
-                  </DropdownMenuItem>
-                ))}
-              </div>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Zoom Slider Control */}
-          <label
-            className="zoom-control flex items-center gap-1.5 text-[8.5px] text-[#717684] hover:text-[#94a3b8] transition-colors select-none cursor-pointer"
-            aria-label="Timeline zoom"
+        {/* Zoom Controls */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setTimelineZoom((prev) => Math.max(0, (typeof prev === 'number' ? prev : 50) - 10))}
+            className="p-1 hover:bg-secondary/60 rounded text-muted-foreground hover:text-foreground transition-colors"
+            title="Zoom Out (Cmd -)"
           >
-            <span>Zoom</span>
-            <input
-              className="timeline-range cursor-pointer"
-              type="range"
-              min="0"
-              max="100"
-              value={timelineZoom}
-              onChange={(e) => setTimelineZoom(parseInt(e.target.value, 10) || 0)}
-              data-testid="input-timeline-zoom"
-              title={`Timeline zoom: ${timelineZoom}%`}
-            />
-          </label>
+            <ZoomOut className="size-3.5" />
+          </button>
+          <span className="text-[10px] font-mono tabular-nums text-muted-foreground px-1">
+            {Math.round(pxPerFrame * 10) / 10}x
+          </span>
+          <button
+            onClick={() => setTimelineZoom((prev) => Math.min(100, (typeof prev === 'number' ? prev : 50) + 10))}
+            className="p-1 hover:bg-secondary/60 rounded text-muted-foreground hover:text-foreground transition-colors"
+            title="Zoom In (Cmd +)"
+          >
+            <ZoomIn className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleFitToView}
+            className="px-1.5 py-0.5 rounded hover:bg-secondary/60 border border-border text-muted-foreground hover:text-primary text-[9px] font-mono transition-colors ml-1"
+            title="Fit sequence timeline to view"
+          >
+            Fit
+          </button>
         </div>
       </div>
 
-      {/* Timeline Main Split Layout: Whole Video Filmstrip vs Single Scene Detail */}
-      {timelineViewLevel === "all-scenes" ? (
-        <SceneFilmstrip />
-      ) : (
-        <div className="timeline-body flex flex-1 min-h-0 relative overflow-hidden bg-[#0c0d0f]">
-          {/* Left Dimmed Margin (click to step back out to All Scenes) */}
-          {activeSceneIndex > 0 && (
-            <button
-              type="button"
-              className="w-6 flex-shrink-0 bg-[#080a0d] hover:bg-[#121722] border-r border-[#1e2330] flex flex-col items-center justify-center text-[#64748b] hover:text-[#38bdf8] transition-colors cursor-pointer z-30 group select-none"
-              onClick={() => setTimelineViewLevel("all-scenes")}
-              title={`Click dimmed area to return to Whole Video (◀ ${scenes[activeSceneIndex - 1]?.name})`}
-              data-testid="button-dimmed-margin-left"
-            >
-              <ChevronLeft size={13} className="group-hover:-translate-x-0.5 transition-transform" />
-              <span className="text-[7.5px] font-mono [writing-mode:vertical-rl] rotate-180 mt-1 uppercase tracking-wider text-[#475569] group-hover:text-[#38bdf8]">
-                All Scenes
-              </span>
-            </button>
-          )}
-
-          {/* Left Track Headers Column */}
-          <div className="timeline-headers-sidebar w-40 flex-shrink-0 flex flex-col border-r border-[#191b1e] bg-[#111215] z-10">
-          {/* Header ruler placeholder */}
-          <div className="h-6 flex items-center px-2.5 border-b border-[#191b1e] bg-[#131518] text-[8.5px] font-medium text-[#64748b] tracking-wider uppercase">
-            <span>Layers ({layers.length})</span>
+      {/* Main Unified Timeline Body */}
+      <div className="flex flex-1 min-h-0 relative overflow-hidden bg-canvas/90">
+        {/* Left Track Headers Column */}
+        <div className="w-36 sm:w-44 md:w-48 flex-shrink-0 flex flex-col border-r border-border bg-card/95 z-20 select-none shadow-xs">
+          {/* Top ruler header */}
+          <div className="h-7 flex items-center px-3 border-b border-border bg-card text-[10px] font-semibold text-muted-foreground tracking-wider uppercase">
+            <span>Tracks</span>
           </div>
 
-          {/* Pinned Camera Lane Header */}
+          {/* Left Track Items */}
           <div
-            className={`h-7 px-2 flex items-center justify-between border-b border-[#20252e] text-[9.5px] transition-colors cursor-pointer ${
-              isCameraActive
-                ? "bg-[#064e3b]/80 border-l-2 border-l-[#10b981] text-[#34d399] font-medium"
-                : "bg-[#0d151c] hover:bg-[#131d27] text-[#6ee7b7]"
-            }`}
-            data-testid="timeline-camera-lane-header"
-            onClick={() => {
-              selectLayers([]);
-              setIsLightSelected(false);
-              setIsCameraSelected(true);
-              setActiveTool("camera");
-            }}
-            title="Camera Track: click to view Camera settings & Focus control"
+            ref={leftHeadersRef}
+            onScroll={handleHeadersScroll}
+            className="flex-1 overflow-y-auto overflow-x-hidden select-none scrollbar-none divide-y divide-border/60"
           >
-            <div className="flex items-center gap-1.5 truncate">
-              <CameraIcon size={11} className={`${isCameraActive ? "text-[#34d399]" : "text-[#10b981]"} flex-shrink-0`} />
-              <span className={`font-medium ${isCameraActive ? "text-[#ecfdf5]" : "text-[#e2e8f0]"}`}>Camera</span>
-              {cameraBlocks.length > 0 && (
-                <span className="px-1 py-0.2 rounded-full bg-[#064e3b] text-[#34d399] text-[7.5px] font-mono">
-                  {cameraBlocks.length}
-                </span>
-              )}
-            </div>
-
-            {/* Add Camera Move Block Picker */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  className="w-4 h-4 rounded hover:bg-[#134e4a] text-[#34d399] hover:text-[#a7f3d0] flex items-center justify-center transition-colors"
-                  title="Add camera move block"
-                  data-testid="button-add-camera-block-lane"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <Plus size={10} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="start"
-                className="w-48 bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[150px] shadow-2xl rounded-md p-1 outline-none"
-              >
-                <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#34d399] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
-                  <span className="flex items-center gap-1.5">
-                    <CameraIcon size={9} />
-                    <span>Camera Track</span>
-                  </span>
-                  <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">motion</span>
-                </DropdownMenuLabel>
-                <DropdownMenuItem
-                  className="cursor-pointer hover:bg-[#064e3b] hover:text-[#6ee7b7] focus:bg-[#064e3b] focus:text-[#6ee7b7] px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
-                  onClick={() => handleAddCameraBlock()}
-                >
-                  <span>Camera Move (Pan / Zoom)</span>
-                  <span className="text-[7.5px] text-[#10b981]/70 font-mono">block</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-
-          {/* Pinned Light Lane Header (conditionally visible when scene has device mockup) */}
-          {hasDeviceMockup && (
-            <div
-              className={`h-7 px-2 flex items-center justify-between border-b border-[#20252e] text-[9.5px] transition-colors cursor-pointer ${
-                isLightActive
-                  ? "bg-[#854d0e]/60 border-l-2 border-l-[#eab308] text-[#fde047] font-medium"
-                  : "bg-[#0d151c] hover:bg-[#181a1d] text-[#eab308]"
-              }`}
-              data-testid="timeline-light-lane-header"
-              onClick={() => {
-                selectLayers([]);
-                setIsCameraSelected(false);
-                setIsLightSelected(true);
-              }}
-              title="Light Track: Studio Illumination & Shadows for device mockups"
-            >
-              <div className="flex items-center gap-1.5 truncate">
-                <Sun size={11} className={`${isLightActive ? "text-[#fde047]" : "text-[#eab308]"} flex-shrink-0`} />
-                <span className={`font-medium ${isLightActive ? "text-[#fef08a]" : "text-[#e2e8f0]"}`}>Light</span>
-                <span className="px-1 py-0.2 rounded-full bg-[#713f12]/60 text-[#fde047] text-[7.5px] font-mono">
-                  {Math.round((activeScene?.lighting?.intensity ?? 0.85) * 100)}%
-                </span>
-                {!(activeScene?.lighting?.enabled ?? true) && (
-                  <span className="text-[7.5px] text-[#78716c] font-mono">(off)</span>
-                )}
-              </div>
-
-              {/* Quick toggle lighting button */}
+            {/* Top Scenes Track Header */}
+            <div className="h-10 px-3 flex items-center justify-between text-xs bg-secondary/30 border-b border-border text-foreground font-medium">
+              <span className="font-semibold text-foreground text-[11px] truncate">Scenes / Shots</span>
               <button
                 type="button"
-                className="w-4 h-4 rounded hover:bg-[#713f12] text-[#fde047] hover:text-[#fef08a] flex items-center justify-center transition-colors"
-                title={(activeScene?.lighting?.enabled ?? true) ? "Disable Studio Illumination" : "Enable Studio Illumination"}
-                data-testid="button-toggle-lighting-lane"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  updateSceneLighting({
-                    enabled: !(activeScene?.lighting?.enabled ?? true),
-                  });
-                }}
+                onClick={() => addScene()}
+                className="size-5 rounded hover:bg-secondary/60 text-primary hover:text-foreground flex items-center justify-center transition-colors"
+                title="Add new scene"
               >
-                <Sun size={10} />
+                <Plus size={12} />
               </button>
             </div>
-          )}
-          {/* Pinned Audio Lane Header */}
-          <div
-            className="h-7 px-2 flex items-center justify-between border-b border-[#20252e] text-[9.5px] bg-[#161226]/90 transition-colors"
-            data-testid="timeline-audio-lane-header"
-            title="Audio Soundtrack Track"
-          >
-            <div className="flex items-center gap-1.5 truncate">
-              <Music size={11} className="text-[#a78bfa] flex-shrink-0" />
-              <span className="font-medium text-[#f5f3ff] truncate max-w-[70px]">
-                {activeScene?.audioTrack?.name || "Audio"}
-              </span>
-              {activeScene?.audioTrack && (
-                <span className="text-[7.5px] text-[#c4b5fd]/70 font-mono">
-                  {activeScene.audioTrack.duration.toFixed(1)}s
-                </span>
-              )}
-            </div>
 
-            <div className="flex items-center gap-1">
-              {activeScene?.audioTrack ? (
-                <>
-                  <button
-                    type="button"
-                    className="w-4 h-4 rounded hover:bg-[#2e1065] text-[#c4b5fd] hover:text-white flex items-center justify-center transition-colors"
-                    title={activeScene.audioTrack.muted ? "Unmute audio" : "Mute audio"}
-                    onClick={() =>
-                      updateAudioTrack(activeSceneId, {
-                        muted: !activeScene.audioTrack?.muted,
-                      })
-                    }
-                    data-testid="button-toggle-audio-mute"
-                  >
-                    {activeScene.audioTrack.muted ? (
-                      <VolumeX size={10} className="text-rose-400" />
-                    ) : (
-                      <Volume2 size={10} />
+            {/* Nested Stack under the Scene timeline (Shown only when assetsVisible is true) */}
+            {assetsVisible && (
+              <div className="divide-y divide-border/60 animate-fadeIn">
+                {/* Camera Lane Header */}
+                <div
+                  className={`h-9 px-3 flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                    isCameraActiveInThisScene
+                      ? "bg-camera-zoom/20 border-l-2 border-l-camera-zoom text-camera-zoom font-medium"
+                      : "bg-canvas/80 hover:bg-secondary/20 text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => {
+                    selectLayers([]);
+                    setIsLightSelected(false);
+                    setIsCameraSelected(true);
+                    setActiveTool("camera");
+                  }}
+                  title="Camera Track: Shot 3D Pan, Tilt, Dolly & Focus"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <CameraIcon size={12} className={isCameraActiveInThisScene ? "text-camera-zoom" : "text-camera-zoom/80"} />
+                    <span className="text-[11px] font-medium">Camera</span>
+                    {activeCameraBlocks.length > 0 && (
+                      <span className="px-1 py-0.2 rounded-full bg-camera-zoom/30 text-camera-zoom text-[8px] font-mono">
+                        {activeCameraBlocks.length}
+                      </span>
                     )}
-                  </button>
+                  </div>
+
                   <button
                     type="button"
-                    className="w-4 h-4 rounded hover:bg-[#4c0519] text-[#f43f5e] hover:text-[#fda4af] flex items-center justify-center transition-colors"
-                    title="Remove audio track"
-                    onClick={() => removeAudioTrack(activeSceneId)}
-                    data-testid="button-remove-audio-track"
-                  >
-                    <Trash2 size={9} />
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="w-4 h-4 rounded hover:bg-[#2e1065] text-[#a78bfa] hover:text-white flex items-center justify-center transition-colors"
-                    title="Add soundtrack (.mp3, .wav)"
-                    onClick={() => audioFileInputRef.current?.click()}
-                    data-testid="button-add-audio-track"
+                    className="size-4 rounded hover:bg-camera-zoom/40 text-camera-zoom flex items-center justify-center transition-colors"
+                    title="Add camera move block"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleAddCameraBlock(activeScene.id, activeSceneDuration);
+                    }}
                   >
                     <Plus size={10} />
                   </button>
-                  <input
-                    ref={audioFileInputRef}
-                    type="file"
-                    accept="audio/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        try {
-                          const decoded = await decodeAudioFile(file);
-                          setAudioTrack(activeSceneId, {
-                            id: `audio-${Date.now()}`,
-                            name: file.name.replace(/\.[^/.]+$/, ""),
-                            url: decoded.url,
-                            duration: decoded.duration,
-                            volume: 1,
-                            muted: false,
-                            offsetFrames: 0,
-                            waveformData: decoded.waveformData,
-                          });
-                        } catch (err) {
-                          console.warn("Failed to load audio file:", err);
-                        }
-                      }
-                    }}
-                  />
-                </>
-              )}
-            </div>
-          </div>
+                </div>
 
-          {/* Layer Row Headers */}
-          <div
-            id="timeline-headers-container"
-            ref={leftHeadersRef}
-            onScroll={handleHeadersScroll}
-            className="flex-1 overflow-y-auto overflow-x-hidden select-none scrollbar-none"
-          >
-            {layers.map((layer) => {
-              const isSelected = selectedLayerIds.includes(layer.id);
-              const isExpanded = !!expandedLayers[layer.id];
-              const layerBlocks = animationBlocks.filter(
-                (b) => b.layerId === layer.id,
-              );
-              const keyframeTracks = layerBlocks.filter(isKeyframeTrack);
-              const availableProps = getAnimatablePropertiesForLayer(layer);
-
-              return (
-                <React.Fragment key={layer.id}>
+                {/* Lighting Header */}
+                {activeHasMockup && (
                   <div
-                    className={`h-7 px-2 flex items-center justify-between border-b border-[#18191c] text-[9.5px] transition-colors cursor-pointer ${
-                      isSelected
-                        ? "bg-[#182836] text-[#60c5ff] font-medium"
-                        : "hover:bg-[#15171b] text-[#9ca3af]"
+                    className={`h-9 px-3 flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                      isLightActiveInThisScene
+                        ? "bg-light-key/20 border-l-2 border-l-light-key text-light-key font-medium"
+                        : "bg-canvas/80 hover:bg-secondary/20 text-muted-foreground hover:text-foreground"
                     }`}
-                    onClick={() => selectLayers([layer.id])}
+                    onClick={() => {
+                      selectLayers([]);
+                      setIsCameraSelected(false);
+                      setIsLightSelected(true);
+                    }}
+                    title="Lighting Track: Studio illumination for 3D device mockups"
                   >
                     <div className="flex items-center gap-1.5 truncate">
+                      <Sun size={12} className="text-light-key" />
+                      <span className="text-[11px] font-medium text-light-key">Lighting</span>
+                      <span className="px-1 py-0.2 rounded-full bg-light-key/30 text-light-key text-[8px] font-mono">
+                        {Math.round((activeScene.lighting?.intensity ?? 0.85) * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Audio Lane Header */}
+                <div
+                  className="h-9 px-3 flex items-center justify-between text-xs bg-canvas/80 hover:bg-secondary/20 transition-colors text-muted-foreground"
+                  title="Soundtrack audio for this scene"
+                >
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Music size={12} className="text-audio-track" />
+                    <span className="text-[11px] font-medium text-foreground truncate max-w-[85px]">
+                      {activeScene.audioTrack?.name || "Audio Track"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {activeScene.audioTrack ? (
                       <button
                         type="button"
-                        className="w-3.5 h-3.5 flex items-center justify-center text-[#6b7280] hover:text-[#e5e7eb] rounded transition-transform"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setExpandedLayers((prev) => ({ ...prev, [layer.id]: !prev[layer.id] }));
-                        }}
-                        title={isExpanded ? "Collapse keyframes" : "Expand keyframes"}
-                        data-testid={`toggle-expand-${layer.id}`}
+                        className="size-4 rounded hover:bg-destructive/30 text-destructive flex items-center justify-center"
+                        title="Remove audio track"
+                        onClick={() => removeAudioTrack(activeScene.id)}
                       >
-                        <ChevronRight
-                          size={10}
-                          className={`transition-transform duration-150 ${isExpanded ? "rotate-90 text-[#38bdf8]" : ""}`}
-                        />
+                        <Trash2 size={9} />
                       </button>
-                      {getLayerIcon(layer.type)}
-                      <span className="truncate max-w-[65px]">{layer.name}</span>
-                      {keyframeTracks.length > 0 && (
-                        <span
-                          className="px-1 py-0.2 rounded bg-[#0369a1]/40 border border-[#0284c7]/50 text-[#38bdf8] text-[7px] font-mono flex items-center gap-0.5"
-                          title={`${keyframeTracks.length} keyframe track${keyframeTracks.length > 1 ? "s" : ""}`}
-                          data-testid={`badge-kf-count-${layer.id}`}
-                        >
-                          <Diamond size={6} className="fill-[#38bdf8]" />
-                          {keyframeTracks.length}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Add Preset or Keyframe Track dropdown */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          type="button"
-                          className="w-4 h-4 rounded hover:bg-[#252830] text-[#6b7280] hover:text-[#d1d5db] flex items-center justify-center transition-colors"
-                          title="Add animation block or keyframe track"
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`add-menu-${layer.id}`}
-                        >
-                          <Plus size={10} />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="start"
-                        className="w-48 max-h-[320px] overflow-y-auto bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[150px] shadow-2xl rounded-md p-1 outline-none"
+                    ) : (
+                      <button
+                        type="button"
+                        className="size-4 rounded hover:bg-secondary/60 text-audio-track hover:text-foreground flex items-center justify-center"
+                        title="Add audio track"
+                        onClick={() => {
+                          audioTargetSceneIdRef.current = activeScene.id;
+                          audioFileInputRef.current?.click();
+                        }}
                       >
-                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#38bdf8] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
-                          <span className="flex items-center gap-1.5">
-                            <Diamond size={8} className="fill-[#0284c7] text-[#38bdf8]" />
-                            <span>Add Keyframe Track</span>
-                          </span>
-                          <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">curves</span>
-                        </DropdownMenuLabel>
-                        <div className="space-y-0.5">
-                          {availableProps.map((prop) => {
-                            const hasTrack = keyframeTracks.some((t) => t.property === prop.id);
-                            return (
-                              <DropdownMenuItem
-                                key={prop.id}
-                                className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] focus:bg-[#1a2c3d] focus:text-[#38bdf8] px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
-                                onClick={() => handleAddTrack(layer.id, prop.id)}
-                                data-testid={`menu-add-kf-${layer.id}-${prop.id}`}
-                              >
-                                <span className="flex items-center gap-1.5">
-                                  <span className={`w-1.5 h-1.5 rounded-full ${hasTrack ? "bg-[#38bdf8] shadow-[0_0_4px_#38bdf8]" : "bg-[#333742]"}`} />
-                                  <span>{prop.label}</span>
-                                </span>
-                                {hasTrack && (
-                                  <span className="text-[7.5px] text-[#38bdf8] font-mono opacity-80">
-                                    active
-                                  </span>
-                                )}
-                              </DropdownMenuItem>
-                            );
-                          })}
-                        </div>
-                        <DropdownMenuSeparator className="bg-[#20232a] my-1.5" />
-                        <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#717684] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
-                          <span className="flex items-center gap-1.5">
-                            <Sparkles size={8} className="text-[#c084fc]" />
-                            <span>Animation Presets</span>
-                          </span>
-                          <span className="text-[7.5px] text-[#4b5563] font-sans font-normal lowercase tracking-normal">blocks</span>
-                        </DropdownMenuLabel>
-                        <div className="space-y-0.5">
-                          {BLOCK_PRESETS.filter((p) => p.id !== "camera-move").map((preset) => (
-                            <DropdownMenuItem
-                              key={preset.id}
-                              className="cursor-pointer hover:bg-[#20242e] hover:text-white focus:bg-[#20242e] focus:text-white px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
-                              onClick={() => handleAddBlock(layer.id, preset.id)}
-                            >
-                              <span className="capitalize">{preset.label}</span>
-                              <span className="text-[7.5px] text-[#4b5563] font-mono">preset</span>
-                            </DropdownMenuItem>
-                          ))}
-                        </div>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                        <Plus size={10} />
+                      </button>
+                    )}
                   </div>
+                </div>
 
-                  {/* Expanded Keyframe Sub-track Headers */}
-                  {isExpanded && (
-                    <div className="bg-[#0b0d10] border-b border-[#181a1e]">
-                      {keyframeTracks.map((track) => (
-                        <div
-                          key={track.id}
-                          className="h-6 pl-5 pr-2 flex items-center justify-between border-b border-[#14161a] text-[8px] text-[#9ca3af] hover:bg-[#101317]"
-                          title={`Keyframe track for ${track.property}`}
-                          data-testid={`subtrack-header-${track.id}`}
-                        >
-                          <div className="flex items-center gap-1 truncate">
-                            <Diamond size={7} className="text-[#38bdf8] fill-[#0284c7]" />
-                            <span className="uppercase font-mono text-[7.5px] text-[#cbd5e1]">
-                              {track.property}
+                {/* Layer Rows for active scene */}
+                {activeSceneLayers.map((layer) => {
+                  const isSelected = selectedLayerIds.includes(layer.id);
+                  const isLayerExpanded = !!expandedLayers[layer.id];
+                  const layerBlocks = activeSceneBlocks.filter((b) => b.layerId === layer.id);
+                  const keyframeTracks = layerBlocks.filter(isKeyframeTrack);
+                  const availableProps = getAnimatablePropertiesForLayer(layer);
+
+                  return (
+                    <React.Fragment key={layer.id}>
+                      <div
+                        className={`group/row h-9 px-3 flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                          isSelected
+                            ? "bg-input/30 text-foreground font-medium"
+                            : "bg-canvas/80 hover:bg-secondary/20 text-muted-foreground group-hover/row:text-foreground"
+                        }`}
+                        onClick={() => {
+                          selectLayers([layer.id]);
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5 truncate min-w-0 pr-1">
+                          <button
+                            type="button"
+                            className="size-4 flex items-center justify-center text-muted-foreground hover:text-foreground rounded transition-transform"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedLayers((prev) => ({ ...prev, [layer.id]: !prev[layer.id] }));
+                            }}
+                            title={isLayerExpanded ? "Collapse keyframe curves" : "Expand keyframe curves"}
+                          >
+                            <ChevronRight
+                              size={10}
+                              className={`transition-transform duration-150 ${isLayerExpanded ? "rotate-90 text-primary" : ""}`}
+                            />
+                          </button>
+                          {getLayerIcon(layer.type)}
+                          <span className="truncate max-w-[85px] text-[11px]">{layer.name}</span>
+                          {keyframeTracks.length > 0 && (
+                            <span className="px-1 py-0.2 rounded bg-primary/20 border border-primary/40 text-primary text-[7px] font-mono flex items-center gap-0.5">
+                              <Diamond size={6} className="fill-primary" />
+                              {keyframeTracks.length}
                             </span>
-                            <span className="text-[#64748b] text-[7px]">
-                              ({track.keyframes.length})
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              className="w-3.5 h-3.5 rounded hover:bg-[#1e293b] text-[#38bdf8] flex items-center justify-center"
-                              title="Add keyframe at current frame"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleAddKeyframeToTrack(track, currentFrame);
-                              }}
-                              data-testid={`button-add-keyframe-${track.id}`}
-                            >
-                              <Plus size={8} />
-                            </button>
-                            <button
-                              type="button"
-                              className="w-3.5 h-3.5 rounded hover:bg-[#450a0a] text-[#ef4444] hover:text-[#f87171] flex items-center justify-center"
-                              title="Delete track"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeAnimationBlock(track.id);
-                              }}
-                              data-testid={`button-delete-track-${track.id}`}
-                            >
-                              <Trash2 size={7.5} />
-                            </button>
-                          </div>
+                          )}
                         </div>
-                      ))}
 
-                      {keyframeTracks.length === 0 && (
-                        <div className="h-6 px-3 text-[7.5px] text-[#64748b] flex items-center justify-between">
-                          <span>No tracks</span>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                className="text-[#38bdf8] hover:underline flex items-center gap-0.5"
-                                data-testid={`btn-quick-add-track-${layer.id}`}
-                              >
-                                <Plus size={7} /> Add track
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent
-                              align="start"
-                              className="w-44 max-h-[260px] overflow-y-auto bg-[#14161a] border border-[#26282e] text-[#cfd3dc] text-[9.5px] min-w-[130px] shadow-2xl rounded-md p-1 outline-none"
+                        {/* Layer Quick Dropdown */}
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="size-4 rounded hover:bg-secondary/60 text-muted-foreground hover:text-foreground flex items-center justify-center transition-colors"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Add keyframe track or animation block"
                             >
-                              <DropdownMenuLabel className="text-[8px] uppercase tracking-wider text-[#38bdf8] font-mono px-2 py-1.5 flex items-center justify-between border-b border-[#1c1f26] mb-1">
-                                <span className="flex items-center gap-1.5">
-                                  <Diamond size={8} className="fill-[#0284c7] text-[#38bdf8]" />
-                                  <span>Add Track</span>
-                                </span>
-                              </DropdownMenuLabel>
-                              <div className="space-y-0.5">
-                                {availableProps.map((prop) => (
+                              <Plus size={10} />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent
+                            align="start"
+                            className="w-48 max-h-[320px] overflow-y-auto bg-card border border-border text-foreground text-xs shadow-2xl rounded-md p-1 outline-none z-50"
+                          >
+                            <DropdownMenuLabel className="text-[9px] uppercase tracking-wider text-primary font-mono px-2 py-1.5 flex items-center justify-between border-b border-border mb-1">
+                              <span className="flex items-center gap-1.5">
+                                <Diamond size={9} className="fill-primary text-primary" />
+                                <span>Add Keyframe Track</span>
+                              </span>
+                            </DropdownMenuLabel>
+                            <div className="space-y-0.5">
+                              {availableProps.map((prop) => {
+                                const hasTrack = keyframeTracks.some((t) => t.property === prop.id);
+                                return (
                                   <DropdownMenuItem
                                     key={prop.id}
-                                    className="cursor-pointer hover:bg-[#1a2c3d] hover:text-[#38bdf8] focus:bg-[#1a2c3d] focus:text-[#38bdf8] px-2 py-1.5 rounded-[3px] flex items-center justify-between text-[9.5px] text-[#cbd5e1] transition-colors"
-                                    onClick={() => handleAddTrack(layer.id, prop.id)}
+                                    className="cursor-pointer hover:bg-secondary/60 hover:text-primary px-2 py-1 rounded flex items-center justify-between text-xs"
+                                    onClick={() => handleAddTrack(activeScene.id, layer.id, prop.id)}
                                   >
-                                    <span>{prop.label}</span>
+                                    <span className="flex items-center gap-1.5">
+                                      <span className={`size-1.5 rounded-full ${hasTrack ? "bg-primary" : "bg-muted"}`} />
+                                      <span>{prop.label}</span>
+                                    </span>
                                   </DropdownMenuItem>
-                                ))}
-                              </div>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </React.Fragment>
-              );
-            })}
+                                );
+                              })}
+                            </div>
+                            <DropdownMenuSeparator className="bg-border my-1" />
+                            <DropdownMenuLabel className="text-[9px] uppercase tracking-wider text-muted-foreground font-mono px-2 py-1">
+                              Animation Presets
+                            </DropdownMenuLabel>
+                            <div className="space-y-0.5">
+                              {BLOCK_PRESETS.filter((p) => p.id !== "camera-move").map((preset) => (
+                                <DropdownMenuItem
+                                  key={preset.id}
+                                  className="cursor-pointer hover:bg-secondary/60 hover:text-foreground px-2 py-1 rounded flex items-center justify-between text-xs"
+                                  onClick={() =>
+                                    handleAddBlock(
+                                      activeScene.id,
+                                      layer.id,
+                                      preset.id,
+                                      activeSceneDuration,
+                                    )
+                                  }
+                                >
+                                  <span>{preset.label}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
 
-            {layers.length === 0 && (
-              <div className="p-4 text-center text-[9px] text-[#4b5563]">
-                No layers in scene.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Scrollable Tracks & Frame Ruler */}
-        <div
-          id="timeline-tracks-container"
-          ref={scrollContainerRef}
-          onScroll={handleTracksScroll}
-          onWheel={(e) => {
-            if (e.shiftKey && scrollContainerRef.current) {
-              scrollContainerRef.current.scrollLeft += e.deltaY || e.deltaX;
-            }
-          }}
-          className="flex-1 overflow-x-auto overflow-y-auto relative select-none scrollbar-studio"
-        >
-          <div style={{ width: `${totalWidth}px`, height: "100%" }} className="relative">
-            {/* Frame Ruler Header */}
-            <div
-              className="h-6 border-b border-[#191b1e] bg-[#14161a] relative cursor-pointer flex items-center"
-              onPointerDown={handleRulerPointerDown}
-              onPointerMove={handleRulerPointerMove}
-              onPointerUp={handleRulerPointerUp}
-            >
-              {/* Ruler ticks */}
-              {Array.from({ length: ticksCount + 1 }).map((_, i) => {
-                const tickFrame = i * majorTickStep;
-                if (tickFrame > durationFrames) return null;
-                const leftPx = tickFrame * pxPerFrame;
-
-                return (
-                  <div
-                    key={tickFrame}
-                    className="timeline-ruler-tick absolute top-0 bottom-0 flex flex-col justify-end pointer-events-none"
-                    style={{ left: `${leftPx}px` }}
-                  >
-                    <span className="text-[7.5px] font-mono text-[#71717a] font-medium leading-none mb-1 -translate-x-1/2">
-                      {formatTimeSecondsOnly(tickFrame)}
-                    </span>
-                    <div className="h-1.5 w-[1px] bg-[#52525b]" />
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Pinned Camera Lane Track */}
-            <div
-              className={`h-7 border-b border-[#20252e] relative cursor-pointer transition-colors ${
-                isCameraActive ? "bg-[#064e3b]/25" : "bg-[#0c131a]/80"
-              }`}
-              data-testid="timeline-camera-lane-track"
-              onClick={() => {
-                selectLayers([]);
-                setIsLightSelected(false);
-                setIsCameraSelected(true);
-                setActiveTool("camera");
-              }}
-            >
-              {/* Frame grid markings */}
-              {Array.from({ length: ticksCount + 1 }).map((_, i) => {
-                const tickFrame = i * majorTickStep;
-                if (tickFrame > durationFrames) return null;
-                return (
-                  <div
-                    key={`cam-grid-${tickFrame}`}
-                    className="absolute top-0 bottom-0 w-[1px] bg-[#1a2332]/40 pointer-events-none"
-                    style={{ left: `${tickFrame * pxPerFrame}px` }}
-                  />
-                );
-              })}
-
-              {/* Camera Animation Blocks */}
-              {cameraBlocks.map((block) => {
-                const left = block.startFrame * pxPerFrame;
-                const width = Math.max(
-                  16,
-                  (block.endFrame - block.startFrame) * pxPerFrame,
-                );
-                const isOverlapping = cameraBlocks.some(
-                  (other) =>
-                    other.id !== block.id &&
-                    other.startFrame < block.endFrame &&
-                    other.endFrame > block.startFrame,
-                );
-
-                return (
-                  <div
-                    key={block.id}
-                    className={`absolute top-1 bottom-1 rounded border shadow-sm flex items-center justify-between px-1.5 cursor-grab active:cursor-grabbing text-[8px] font-medium select-none overflow-hidden transition-all bg-[#047857]/90 hover:bg-[#059669] border-[#10b981] text-[#ecfdf5] hover:brightness-110 z-10 ${
-                      isOverlapping
-                        ? "ring-1 ring-amber-400 !border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
-                        : ""
-                    }`}
-                    style={{
-                      left: `${left}px`,
-                      width: `${width}px`,
-                    }}
-                    title={
-                      isOverlapping
-                        ? "Overlapping camera blocks compose additively"
-                        : undefined
-                    }
-                    data-testid={`camera-block-${block.id}`}
-                    onPointerDown={(e) => startBlockDrag(e, block, "move")}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      selectLayers([]);
-                      setIsLightSelected(false);
-                      setIsCameraSelected(true);
-                      setActiveTool("camera");
-                    }}
-                  >
-                    {/* Left resize handle */}
-                    <div
-                      className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/40 z-10"
-                      onPointerDown={(e) =>
-                        startBlockDrag(e, block, "resize-left")
-                      }
-                    />
-
-                    {/* Block label */}
-                    <span className="truncate pointer-events-none flex items-center gap-1">
-                      <CameraIcon size={9} className="flex-shrink-0 text-[#a7f3d0]" />
-                      <span>Camera Move</span>
-                      {block.cameraTo && (
-                        <span className="text-[7px] text-[#a7f3d0]/80 hidden sm:inline">
-                          ({block.cameraTo.z !== undefined && block.cameraTo.z !== 0 ? `Z:${block.cameraTo.z > 0 ? "+" : ""}${block.cameraTo.z}` : `X:${block.cameraTo.x ?? 0}`})
-                        </span>
-                      )}
-                      {isOverlapping && (
-                        <span
-                          className="ml-1 inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-500/30 text-amber-200 text-[6.5px] font-semibold uppercase tracking-wider"
-                          data-testid={`camera-overlap-warning-${block.id}`}
-                        >
-                          <AlertTriangle size={7} className="text-amber-300" />
-                          <span>Overlap</span>
-                        </span>
-                      )}
-                    </span>
-
-                    {/* Right resize handle */}
-                    <div
-                      className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/40 z-10"
-                      onPointerDown={(e) =>
-                        startBlockDrag(e, block, "resize-right")
-                      }
-                    />
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Pinned Light Lane Track (conditionally visible when scene has device mockup) */}
-            {hasDeviceMockup && (
-              <div
-                className={`h-7 border-b border-[#20252e] relative cursor-pointer transition-colors ${
-                  isLightActive ? "bg-[#713f12]/25" : "bg-[#0c131a]/80"
-                }`}
-                data-testid="timeline-light-lane-track"
-                onClick={() => {
-                  selectLayers([]);
-                  setIsCameraSelected(false);
-                  setIsLightSelected(true);
-                }}
-              >
-                {/* Frame grid markings */}
-                {Array.from({ length: ticksCount + 1 }).map((_, i) => {
-                  const tickFrame = i * majorTickStep;
-                  if (tickFrame > durationFrames) return null;
-                  return (
-                    <div
-                      key={`light-grid-${tickFrame}`}
-                      className="absolute top-0 bottom-0 w-[1px] bg-[#1a2332]/40 pointer-events-none"
-                      style={{ left: `${tickFrame * pxPerFrame}px` }}
-                    />
+                      {/* Expanded Keyframe Track Sub-rows */}
+                      {isLayerExpanded &&
+                        keyframeTracks.map((track) => (
+                          <div
+                            key={track.id}
+                            className="h-7 px-3 pl-8 flex items-center justify-between border-b border-border bg-card/60 text-[10px] text-muted-foreground"
+                          >
+                            <span className="font-mono truncate">{track.property}</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                className="size-4 rounded hover:bg-secondary/60 text-primary flex items-center justify-center"
+                                title="Add keyframe at current frame"
+                                onClick={() =>
+                                  handleAddKeyframeToTrack(activeScene, track, currentFrame)
+                                }
+                              >
+                                <Diamond size={8} className="fill-primary" />
+                              </button>
+                              <button
+                                type="button"
+                                className="size-4 rounded hover:bg-destructive/30 text-destructive flex items-center justify-center"
+                                title="Remove track"
+                                onClick={() => removeAnimationBlock(track.id)}
+                              >
+                                <Trash2 size={8} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                    </React.Fragment>
                   );
                 })}
 
-                {/* Studio Lighting span block across scene */}
-                <div
-                  className={`absolute top-1 bottom-1 rounded border shadow-sm flex items-center justify-between px-2 text-[8px] font-medium select-none overflow-hidden transition-all ${
-                    (activeScene?.lighting?.enabled ?? true)
-                      ? "bg-[#854d0e]/85 hover:bg-[#a16207] border-[#ca8a04] text-[#fef08a]"
-                      : "bg-[#292524]/80 hover:bg-[#44403c] border-[#78716c] text-[#a8a29e]"
-                  } z-10`}
-                  style={{
-                    left: 0,
-                    width: `${durationFrames * pxPerFrame}px`,
-                  }}
-                  title={`Direct Studio Illumination: ${(activeScene?.lighting?.enabled ?? true) ? "Enabled" : "Disabled"}, Intensity: ${Math.round((activeScene?.lighting?.intensity ?? 0.85) * 100)}%, Light X: ${activeScene?.lighting?.lightX ?? -300}, Light Y: ${activeScene?.lighting?.lightY ?? -450}`}
-                  data-testid="timeline-light-span-block"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectLayers([]);
-                    setIsCameraSelected(false);
-                    setIsLightSelected(true);
-                  }}
-                >
-                  <div className="flex items-center gap-1.5 truncate">
-                    <Sun size={9} className={(activeScene?.lighting?.enabled ?? true) ? "text-[#fde047]" : "text-[#78716c]"} />
-                    <span className="truncate">
-                      Studio Illumination &bull; {Math.round((activeScene?.lighting?.intensity ?? 0.85) * 100)}%
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-1 font-mono text-[7.5px] opacity-80 flex-shrink-0">
-                    <span>X:{activeScene?.lighting?.lightX ?? -300}</span>
-                    <span>Y:{activeScene?.lighting?.lightY ?? -450}</span>
-                  </div>
+                {/* Add Layer shortcut button */}
+                <div className="p-2 flex justify-center border-t border-border">
+                  <button
+                    type="button"
+                    className="w-full py-1 rounded bg-secondary/30 hover:bg-secondary/60 border border-border text-muted-foreground hover:text-primary text-[10px] font-medium flex items-center justify-center gap-1 transition-colors"
+                    onClick={() => {
+                      addLayer(activeScene.id, {
+                        name: `Layer ${activeSceneLayers.length + 1}`,
+                        type: "shape",
+                        shape: { kind: "rect", fill: "#38bdf8" },
+                      });
+                    }}
+                  >
+                    <Plus size={10} />
+                    <span>Add Layer to Shot</span>
+                  </button>
                 </div>
               </div>
             )}
-            {/* Pinned Audio Lane Track */}
-            <div
-              className="h-7 border-b border-[#20252e] relative bg-[#120e20]/80 overflow-hidden"
-              data-testid="timeline-audio-lane-track"
-            >
-              {/* Frame grid markings */}
-              {Array.from({ length: ticksCount + 1 }).map((_, i) => {
-                const tickFrame = i * majorTickStep;
-                if (tickFrame > durationFrames) return null;
-                return (
-                  <div
-                    key={`audio-grid-${tickFrame}`}
-                    className="absolute top-0 bottom-0 w-[1px] bg-[#2e1065]/30 pointer-events-none"
-                    style={{ left: `${tickFrame * pxPerFrame}px` }}
-                  />
-                );
-              })}
-
-              {/* Audio Waveform Clip */}
-              {activeScene?.audioTrack && (() => {
-                const track = activeScene.audioTrack;
-                const audioLeft = (track.offsetFrames || 0) * pxPerFrame;
-                const audioWidth = Math.max(30, (track.duration * fps) * pxPerFrame);
-
-                return (
-                  <div
-                    className="absolute top-1 bottom-1 rounded border border-[#8b5cf6]/80 bg-[#4c1d95]/70 hover:bg-[#5b21b6]/80 text-[#ede9fe] shadow-sm flex items-center px-1 cursor-grab active:cursor-grabbing text-[8px] font-medium select-none overflow-hidden transition-all z-10"
-                    style={{
-                      left: `${audioLeft}px`,
-                      width: `${audioWidth}px`,
-                    }}
-                    title={`${track.name} (${track.duration.toFixed(1)}s) - Drag horizontally to sync beat`}
-                    data-testid="timeline-audio-waveform-clip"
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      audioDragRef.current = {
-                        startX: e.clientX,
-                        initialOffset: track.offsetFrames || 0,
-                      };
-                      setIsDraggingAudio(true);
-
-                      const onPointerMove = (moveEvent: PointerEvent) => {
-                        if (!audioDragRef.current) return;
-                        const deltaPx = moveEvent.clientX - audioDragRef.current.startX;
-                        const deltaFrames = Math.round(deltaPx / pxPerFrame);
-                        const newOffset = audioDragRef.current.initialOffset + deltaFrames;
-                        updateAudioTrack(activeSceneId, { offsetFrames: newOffset });
-                      };
-
-                      const onPointerUp = () => {
-                        audioDragRef.current = null;
-                        setIsDraggingAudio(false);
-                        window.removeEventListener("pointermove", onPointerMove);
-                        window.removeEventListener("pointerup", onPointerUp);
-                      };
-
-                      window.addEventListener("pointermove", onPointerMove);
-                      window.addEventListener("pointerup", onPointerUp);
-                    }}
-                  >
-                    {/* SVG Waveform Visualization */}
-                    <div className="absolute inset-0 flex items-center px-1 opacity-80 pointer-events-none">
-                      <svg
-                        className="w-full h-4"
-                        preserveAspectRatio="none"
-                        viewBox={`0 0 ${track.waveformData?.length || 100} 24`}
-                      >
-                        {(track.waveformData || []).map((peak, idx) => {
-                          const barHeight = Math.max(2, peak * 22);
-                          const y = (24 - barHeight) / 2;
-                          return (
-                            <rect
-                              key={idx}
-                              x={idx}
-                              y={y}
-                              width="0.85"
-                              height={barHeight}
-                              fill={track.muted ? "#94a3b8" : "#c4b5fd"}
-                              rx="0.3"
-                            />
-                          );
-                        })}
-                      </svg>
-                    </div>
-
-                    {/* Audio Title badge */}
-                    <span className="relative z-10 px-1 py-0.5 rounded bg-[#2e1065]/90 text-[7.5px] font-mono text-[#f5f3ff] truncate border border-[#7c3aed]/40 flex items-center gap-1">
-                      <Music size={7} className="text-[#a78bfa]" />
-                      <span>{track.name}</span>
-                      {track.offsetFrames !== 0 && (
-                        <span className="text-[#c4b5fd]/80">
-                          ({track.offsetFrames > 0 ? `+${track.offsetFrames}` : track.offsetFrames}f)
-                        </span>
-                      )}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              {!activeScene?.audioTrack && (
-                <div
-                  className="absolute inset-0 flex items-center px-3 text-[8px] text-[#7c3aed]/70 italic cursor-pointer hover:text-[#c4b5fd] transition-colors"
-                  onClick={() => audioFileInputRef.current?.click()}
-                >
-                  <span>+ Click to import soundtrack audio file (.mp3, .wav, .m4a) with waveform sync</span>
-                </div>
-              )}
-            </div>
-
-            {/* Per-Layer Lanes Container */}
-            <div className="relative">
-              {/* Horizontal lane rows */}
-              {layers.map((layer) => {
-                const isSelected = selectedLayerIds.includes(layer.id);
-                const isExpanded = !!expandedLayers[layer.id];
-                const layerBlocks = animationBlocks.filter(
-                  (b) => b.layerId === layer.id,
-                );
-                const presetBlocks = layerBlocks.filter((b) => !isKeyframeTrack(b));
-                const keyframeTracks = layerBlocks.filter(isKeyframeTrack);
-
-                return (
-                  <React.Fragment key={layer.id}>
-                    <div
-                      className={`h-7 border-b border-[#16171a] relative transition-colors ${
-                        isSelected ? "bg-[#131b24]/40" : "hover:bg-[#121417]"
-                      }`}
-                      onClick={() => selectLayers([layer.id])}
-                      onContextMenu={(e) => {
-                        e.preventDefault();
-                        const frame = getFrameFromClientX(e.clientX);
-                        handleAddBlock(layer.id, "fade-in");
-                      }}
-                    >
-                      {/* Grid background vertical lines */}
-                      {Array.from({ length: ticksCount + 1 }).map((_, i) => {
-                        const tickFrame = i * majorTickStep;
-                        if (tickFrame > durationFrames) return null;
-                        return (
-                          <div
-                            key={tickFrame}
-                            className="absolute top-0 bottom-0 w-[1px] bg-[#18191d]"
-                            style={{ left: `${tickFrame * pxPerFrame}px` }}
-                          />
-                        );
-                      })}
-
-                      {/* Animation Block Chips on this lane */}
-                      {presetBlocks.map((block) => {
-                        const left = block.startFrame * pxPerFrame;
-                        const width = Math.max(
-                          16,
-                          (block.endFrame - block.startFrame) * pxPerFrame,
-                        );
-                        const colorClass = getPresetColor(block.preset);
-                        const isOverlapping = presetBlocks.some(
-                          (other) =>
-                            other.id !== block.id &&
-                            other.startFrame < block.endFrame &&
-                            other.endFrame > block.startFrame,
-                        );
-
-                        return (
-                          <div
-                            key={block.id}
-                            className={`absolute top-1 bottom-1 rounded border shadow-sm flex items-center justify-between px-1.5 cursor-grab active:cursor-grabbing text-[8px] font-medium select-none overflow-hidden transition-all ${colorClass} hover:brightness-110 ${
-                              isOverlapping
-                                ? "ring-1 ring-amber-400 !border-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
-                                : ""
-                            }`}
-                            style={{
-                              left: `${left}px`,
-                              width: `${width}px`,
-                            }}
-                            title={
-                              isOverlapping
-                                ? "Overlapping blocks: effects compose additively on this layer"
-                                : undefined
-                            }
-                            data-testid={`layer-block-${block.id}`}
-                            onPointerDown={(e) => startBlockDrag(e, block, "move")}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (block.layerId) selectLayers([block.layerId]);
-                            }}
-                          >
-                            {/* Left resize handle */}
-                            <div
-                              className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 z-10"
-                              onPointerDown={(e) =>
-                                startBlockDrag(e, block, "resize-left")
-                              }
-                            />
-
-                            {/* Block label */}
-                            <span className="truncate pointer-events-none capitalize flex items-center gap-1">
-                              <span>{getPresetLabel(block.preset)}</span>
-                              {isOverlapping && (
-                                <span
-                                  className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-500/30 text-amber-200 text-[6.5px] font-semibold uppercase tracking-wider"
-                                  data-testid={`layer-overlap-warning-${block.id}`}
-                                >
-                                  <AlertTriangle size={7} className="text-amber-300" />
-                                  <span>Overlap</span>
-                                </span>
-                              )}
-                            </span>
-
-                            {/* Right resize handle */}
-                            <div
-                              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-white/30 z-10"
-                              onPointerDown={(e) =>
-                                startBlockDrag(e, block, "resize-right")
-                              }
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Keyframe Sub-track Lanes */}
-                    {isExpanded && (
-                      <div className="bg-[#08090b]/90 border-b border-[#181a1e]">
-                        {keyframeTracks.map((track) => (
-                          <div
-                            key={track.id}
-                            className="h-6 border-b border-[#14161a] relative cursor-crosshair hover:bg-[#0f1217] transition-colors"
-                            onClick={(e) => {
-                              if ((e.target as HTMLElement).closest("[data-keyframe-diamond]")) return;
-                              const frame = getFrameFromClientX(e.clientX);
-                              handleAddKeyframeToTrack(track, frame);
-                            }}
-                            title="Click anywhere on track to add a keyframe"
-                            data-testid={`subtrack-lane-${track.id}`}
-                          >
-                            {/* Grid vertical lines */}
-                            {Array.from({ length: ticksCount + 1 }).map((_, i) => {
-                              const tickFrame = i * majorTickStep;
-                              if (tickFrame > durationFrames) return null;
-                              return (
-                                <div
-                                  key={tickFrame}
-                                  className="absolute top-0 bottom-0 w-[1px] bg-[#14161a]"
-                                  style={{ left: `${tickFrame * pxPerFrame}px` }}
-                                />
-                              );
-                            })}
-
-                            {/* Center track guide line */}
-                            <div className="absolute left-0 right-0 top-1/2 h-[1px] bg-[#1a1e24] -translate-y-1/2 pointer-events-none" />
-
-                            {/* Connecting line between keyframes */}
-                            {track.keyframes.length >= 2 && (
-                              <div
-                                className="absolute top-1/2 h-[2px] bg-[#0284c7]/70 -translate-y-1/2 pointer-events-none"
-                                style={{
-                                  left: `${track.keyframes[0].frame * pxPerFrame}px`,
-                                  width: `${Math.max(0, (track.keyframes[track.keyframes.length - 1].frame - track.keyframes[0].frame) * pxPerFrame)}px`,
-                                }}
-                              />
-                            )}
-
-                            {/* Diamond markers */}
-                            {track.keyframes.map((kf) => (
-                              <div
-                                key={`${track.id}-${kf.frame}`}
-                                data-keyframe-diamond="true"
-                                className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 bg-[#0284c7] hover:bg-[#38bdf8] border border-[#38bdf8] hover:scale-125 shadow-[0_0_6px_rgba(56,189,248,0.7)] cursor-ew-resize transition-transform z-10"
-                                style={{ left: `${kf.frame * pxPerFrame}px` }}
-                                title={`Frame ${kf.frame}: ${kf.value} (${kf.easing}) - Drag to reposition, double-click to delete`}
-                                data-testid={`keyframe-diamond-${track.id}-${kf.frame}`}
-                                onPointerDown={(e) => startKeyframeDrag(e, track, kf.frame)}
-                                onDoubleClick={(e) => {
-                                  e.stopPropagation();
-                                  removeKeyframe(activeSceneId, track.id, kf.frame);
-                                }}
-                              />
-                            ))}
-                          </div>
-                        ))}
-
-                        {keyframeTracks.length === 0 && (
-                          <div className="h-6 flex items-center px-3 text-[7.5px] text-[#475569]">
-                            No property tracks yet. Add a track to begin keyframing.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-
-              {/* Playhead Vertical Line with Head Handle */}
-              <div
-                className="playhead absolute top-[-24px] bottom-0 w-[1.5px] bg-[#38bdf8] pointer-events-none z-20"
-                style={{
-                  left: `${currentFrame * pxPerFrame}px`,
-                  height: `calc(100% + 24px)`,
-                }}
-                data-testid="timeline-playhead"
-              >
-                {/* Needle scrubber cap */}
-                <div className="absolute top-0 left-[-4px] w-2.5 h-3 bg-[#38bdf8] rounded-t-sm shadow-md flex items-center justify-center">
-                  <div className="w-0.5 h-1.5 bg-[#082f49] rounded-full" />
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
-        {/* Right Dimmed Margin (click to step back out to All Scenes) */}
-        {activeSceneIndex < scenes.length - 1 && (
-          <button
-            type="button"
-            className="w-6 flex-shrink-0 bg-[#080a0d] hover:bg-[#121722] border-l border-[#1e2330] flex flex-col items-center justify-center text-[#64748b] hover:text-[#38bdf8] transition-colors cursor-pointer z-30 group select-none"
-            onClick={() => setTimelineViewLevel("all-scenes")}
-            title={`Click dimmed area to return to Whole Video (${scenes[activeSceneIndex + 1]?.name} ▶)`}
-            data-testid="button-dimmed-margin-right"
+        {/* Right Tracks Container (Ruler & Horizontal Tracks) */}
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleTracksScroll}
+          className="flex-1 overflow-x-auto overflow-y-auto relative bg-canvas/80 select-none min-w-0"
+        >
+          <div
+            className="relative min-h-full"
+            style={{ width: `${totalWidth}px` }}
           >
-            <ChevronRight size={13} className="group-hover:translate-x-0.5 transition-transform" />
-            <span className="text-[7.5px] font-mono [writing-mode:vertical-rl] mt-1 uppercase tracking-wider text-[#475569] group-hover:text-[#38bdf8]">
-              All Scenes
-            </span>
-          </button>
-        )}
+            {/* 2. Scrubber Track Ruler */}
+            <div
+              className="group/scrub relative flex h-7 w-full cursor-col-resize bg-secondary/10 hover:bg-secondary/30 transition-colors border-b border-border sticky top-0 z-30 select-none"
+              onPointerDown={handleRulerPointerDown}
+              onPointerMove={(e) => {
+                handleRulerPointerMove(e);
+                const frame = getFrameFromClientX(e.clientX);
+                setHoveredRulerFrame(frame);
+              }}
+              onPointerLeave={() => setHoveredRulerFrame(null)}
+              onPointerUp={handleRulerPointerUp}
+              data-testid="timeline-ruler"
+            >
+              {/* Tick Marks */}
+              <div className="absolute inset-0 flex items-end pointer-events-none opacity-40">
+                {Array.from({ length: ticksCount + 1 }).map((_, i) => {
+                  const frame = i * majorTickStep;
+                  if (frame > totalSequenceFrames + 10) return null;
+                  const leftPx = frame * pxPerFrame;
+                  return (
+                    <div
+                      key={frame}
+                      className="absolute bottom-0 h-3 border-l border-muted-foreground"
+                      style={{ left: `${leftPx}px` }}
+                    >
+                      <span className="absolute bottom-3 left-1 text-[8px] font-mono tabular-nums text-muted-foreground group-hover/scrub:text-foreground">
+                        {Math.floor(frame / fps)}s
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Ghost Hover Time Marker */}
+              {hoveredRulerFrame !== null && !isScrubbingRef.current && (
+                <div
+                  className="absolute top-0 bottom-0 pointer-events-none w-px bg-primary/40 z-20"
+                  style={{ left: `${hoveredRulerFrame * pxPerFrame}px` }}
+                >
+                  <span className="absolute top-0.5 left-1 text-[8px] font-mono bg-card/90 px-1 py-0.2 rounded border border-border text-primary shadow-xs">
+                    {hoveredRulerFrame}f
+                  </span>
+                </div>
+              )}
+
+              {/* Scrubber Needle & Diamond Head (Top portion) */}
+              <div
+                className="absolute top-0 bottom-0 z-40 w-[1.75px] bg-primary pointer-events-none"
+                style={{ transform: `translateX(${currentFrame * pxPerFrame}px)` }}
+              >
+                <div className="size-2.5 -ml-[4.5px] -mt-[1px] bg-primary rotate-45 rounded-[1px] shadow-sm pointer-events-auto cursor-ew-resize hover:scale-125 transition-transform" />
+              </div>
+            </div>
+
+            {/* 1. TOP SCENE / SHOT TRACK (Scenes beside each other in sequence) */}
+            <div className="h-10 border-b border-border bg-card/40 relative flex items-center">
+              {sceneSequence.map((item) => {
+                const { scene, startFrame, duration } = item;
+                const isActive = scene.id === activeSceneId;
+                const widthPx = duration * pxPerFrame;
+                const leftPx = startFrame * pxPerFrame;
+
+                return (
+                  <div
+                    key={scene.id}
+                    className={`group/clip absolute top-1 bottom-1 rounded-sm border transition-all select-none flex items-center justify-between px-2 cursor-grab active:cursor-grabbing shadow-xs ${
+                      isActive
+                        ? "border-shot/80 bg-shot/20 ring-2 ring-primary/80 text-foreground shadow-md z-20"
+                        : "border-shot/50 bg-shot/10 hover:border-shot/80 text-muted-foreground hover:text-foreground z-10"
+                    }`}
+                    style={{
+                      left: `${leftPx}px`,
+                      width: `${Math.max(24, widthPx)}px`,
+                      '--layer-color': 'var(--color-shot)',
+                    } as React.CSSProperties & Record<string, string>}
+                    onClick={() => {
+                      setActiveScene(scene.id);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setActiveScene(scene.id);
+                      setAssetsVisible((prev) => !prev);
+                    }}
+                    title={`Scene: ${scene.name} (${duration}f / ${(duration / fps).toFixed(1)}s). Double-click to ${assetsVisible ? "hide" : "show"} nested assets.`}
+                    data-testid={`scene-block-${scene.id}`}
+                  >
+                    {/* Left Trim Handle */}
+                    <div
+                      className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover/clip:opacity-100 bg-primary/30 rounded-l-xs hover:bg-primary/70 transition-opacity z-30"
+                      onPointerDown={(e) => handleSceneTrimStart(e, scene, "start")}
+                      title="Trim start of shot"
+                    />
+
+                    {/* Scene Label & Renaming */}
+                    <div className="flex items-center gap-1.5 truncate min-w-0 pr-1 select-none">
+                      <Film size={11} className={isActive ? "text-primary" : "text-muted-foreground"} />
+                      {editingSceneId === scene.id ? (
+                        <input
+                          autoFocus
+                          value={editSceneName}
+                          onChange={(e) => setEditSceneName(e.target.value)}
+                          onBlur={() => {
+                            if (editSceneName.trim()) {
+                              updateScene(scene.id, { name: editSceneName.trim() });
+                            }
+                            setEditingSceneId(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              if (editSceneName.trim()) {
+                                updateScene(scene.id, { name: editSceneName.trim() });
+                              }
+                              setEditingSceneId(null);
+                            } else if (e.key === "Escape") {
+                              setEditingSceneId(null);
+                            }
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="bg-background border border-primary text-foreground text-[10px] px-1 py-0.5 rounded outline-none w-20"
+                        />
+                      ) : (
+                        <span
+                          className="truncate text-[10px] font-semibold tracking-wide select-none"
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSceneId(scene.id);
+                            setEditSceneName(scene.name);
+                          }}
+                        >
+                          {scene.name}
+                        </span>
+                      )}
+                      <span className="text-[8px] opacity-75 font-mono">
+                        ({(duration / fps).toFixed(1)}s)
+                      </span>
+                    </div>
+
+                    {/* Scene Quick Actions Menu */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover/clip:opacity-100 transition-opacity">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            type="button"
+                            className="size-4 rounded hover:bg-secondary/60 text-foreground flex items-center justify-center"
+                            onClick={(e) => e.stopPropagation()}
+                            title="Scene options"
+                          >
+                            <MoreVertical size={10} />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                          align="end"
+                          className="w-44 bg-card border border-border text-foreground text-xs shadow-2xl rounded-md p-1 outline-none z-50"
+                        >
+                          <DropdownMenuLabel className="text-[9px] uppercase tracking-wider text-primary font-mono px-2 py-1">
+                            {scene.name}
+                          </DropdownMenuLabel>
+                          <DropdownMenuItem
+                            className="cursor-pointer hover:bg-secondary/60 px-2 py-1.5 rounded flex items-center gap-1.5 text-xs"
+                            onClick={() => {
+                              setEditingSceneId(scene.id);
+                              setEditSceneName(scene.name);
+                            }}
+                          >
+                            <Edit2 size={11} />
+                            <span>Rename Scene</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="cursor-pointer hover:bg-secondary/60 px-2 py-1.5 rounded flex items-center gap-1.5 text-xs"
+                            onClick={() => duplicateScene(scene.id)}
+                          >
+                            <Copy size={11} />
+                            <span>Duplicate Scene</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="cursor-pointer hover:bg-secondary/60 px-2 py-1.5 rounded flex items-center gap-1.5 text-xs"
+                            onClick={() => {
+                              setAssetsVisible(true);
+                              handleAddCameraBlock(scene.id, duration);
+                            }}
+                          >
+                            <CameraIcon size={11} className="text-camera-zoom" />
+                            <span>Add Camera Move</span>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="cursor-pointer hover:bg-secondary/60 px-2 py-1.5 rounded flex items-center gap-1.5 text-xs"
+                            onClick={() => setAssetsVisible((v) => !v)}
+                          >
+                            <Layers size={11} className="text-primary" />
+                            <span>{assetsVisible ? "Hide Nested Assets" : "Show Nested Assets"}</span>
+                          </DropdownMenuItem>
+                          {scenes.length > 1 && (
+                            <>
+                              <DropdownMenuSeparator className="bg-border" />
+                              <DropdownMenuItem
+                                className="cursor-pointer hover:bg-destructive/30 text-destructive px-2 py-1.5 rounded flex items-center gap-1.5 text-xs"
+                                onClick={() => deleteScene(scene.id)}
+                              >
+                                <Trash2 size={11} />
+                                <span>Delete Scene</span>
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    {/* Right Trim Handle */}
+                    <div
+                      className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover/clip:opacity-100 bg-primary/30 rounded-r-xs hover:bg-primary/70 transition-opacity z-30"
+                      onPointerDown={(e) => handleSceneTrimStart(e, scene, "end")}
+                      title="Drag to increase or reduce scene duration"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 2. NESTED ASSET STACK TRACKS (Shown only when assetsVisible is true) */}
+            {assetsVisible && (
+              <div className="relative divide-y divide-border/60 animate-fadeIn">
+                {/* Active Scene Highlight Background Area across all asset tracks */}
+                <div
+                  className="absolute top-0 bottom-0 pointer-events-none bg-primary/[0.03] border-x border-primary/20 z-0"
+                  style={{
+                    left: `${activeSceneStartFrame * pxPerFrame}px`,
+                    width: `${activeSceneDuration * pxPerFrame}px`,
+                  }}
+                />
+
+                {/* Dynamic Snap Guidelines during active drag or trim */}
+                {activeDragFeedback && (
+                  <>
+                    {/* Start Edge Guide Line */}
+                    <div
+                      className="absolute top-0 bottom-0 w-px border-l border-dashed border-primary/80 pointer-events-none z-30 shadow-xs"
+                      style={{
+                        left: `${(activeSceneStartFrame + activeDragFeedback.startFrame) * pxPerFrame}px`,
+                      }}
+                    />
+                    {/* End Edge Guide Line */}
+                    <div
+                      className="absolute top-0 bottom-0 w-px border-l border-dashed border-primary/80 pointer-events-none z-30 shadow-xs"
+                      style={{
+                        left: `${(activeSceneStartFrame + activeDragFeedback.endFrame) * pxPerFrame}px`,
+                      }}
+                    />
+                  </>
+                )}
+
+                {/* Nested Camera Lane Track */}
+                <div
+                  className={`group/row relative h-9 w-full flex items-center transition-colors cursor-pointer ${
+                    isCameraActiveInThisScene ? "bg-camera-zoom/10" : "bg-canvas/80 hover:bg-secondary/20"
+                  }`}
+                  onClick={() => {
+                    selectLayers([]);
+                    setIsLightSelected(false);
+                    setIsCameraSelected(true);
+                    setActiveTool("camera");
+                  }}
+                >
+                  {activeCameraBlocks.map((block) => {
+                    const leftPx = (activeSceneStartFrame + block.startFrame) * pxPerFrame;
+                    const widthPx = (block.endFrame - block.startFrame) * pxPerFrame;
+
+                    return (
+                      <div
+                        key={block.id}
+                        className="group/clip absolute top-1 bottom-1 rounded-sm border border-camera-zoom/60 bg-camera-zoom/15 text-foreground text-[10px] flex items-center justify-between px-2 shadow-xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing z-10"
+                        style={{
+                          left: `${leftPx}px`,
+                          width: `${Math.max(16, widthPx)}px`,
+                          '--layer-color': 'var(--color-camera-zoom)',
+                        } as React.CSSProperties & Record<string, string>}
+                        onPointerDown={(e) =>
+                          startBlockDrag(e, activeScene.id, block, "move", activeSceneDuration)
+                        }
+                      >
+                        {/* Left resize handle */}
+                        <div
+                          className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover/clip:opacity-100 bg-primary/30 rounded-l-xs hover:bg-primary/70 transition-opacity"
+                          onPointerDown={(e) =>
+                            startBlockDrag(e, activeScene.id, block, "resize-left", activeSceneDuration)
+                          }
+                        />
+                        <span className="truncate font-medium flex items-center gap-1 text-camera-zoom">
+                          <CameraIcon size={9} />
+                          <span>Camera Move</span>
+                        </span>
+                        {/* Right resize handle */}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize opacity-0 group-hover/clip:opacity-100 bg-primary/30 rounded-r-xs hover:bg-primary/70 transition-opacity"
+                          onPointerDown={(e) =>
+                            startBlockDrag(e, activeScene.id, block, "resize-right", activeSceneDuration)
+                          }
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Nested Lighting Lane Track */}
+                {activeHasMockup && (
+                  <div
+                    className={`group/row relative h-9 w-full flex items-center transition-colors cursor-pointer ${
+                      isLightActiveInThisScene ? "bg-light-key/10" : "bg-canvas/80 hover:bg-secondary/20"
+                    }`}
+                    onClick={() => {
+                      selectLayers([]);
+                      setIsCameraSelected(false);
+                      setIsLightSelected(true);
+                    }}
+                  >
+                    <div
+                      className="absolute top-1 bottom-1 rounded-sm border border-light-key/60 bg-light-key/15 text-light-key text-[10px] flex items-center px-2 z-10"
+                      style={{
+                        left: `${activeSceneStartFrame * pxPerFrame}px`,
+                        width: `${activeSceneDuration * pxPerFrame}px`,
+                      }}
+                    >
+                      <Sun size={9} className="mr-1 text-light-key" />
+                      <span>Studio 3D Lighting ({Math.round((activeScene.lighting?.intensity ?? 0.85) * 100)}%)</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Nested Audio Lane Track */}
+                <div
+                  className="group/row relative h-9 w-full flex items-center bg-canvas/80 hover:bg-secondary/20 transition-colors cursor-pointer overflow-hidden"
+                  onClick={() => {
+                    if (!activeScene.audioTrack) {
+                      audioTargetSceneIdRef.current = activeScene.id;
+                      audioFileInputRef.current?.click();
+                    }
+                  }}
+                >
+                  {activeScene.audioTrack && (
+                    <div
+                      className="group/clip absolute top-1 bottom-1 rounded-sm border border-audio-track/60 bg-audio-track/15 text-foreground text-[10px] flex items-center px-2 z-10 cursor-grab active:cursor-grabbing shadow-xs"
+                      style={{
+                        left: `${(activeSceneStartFrame + (activeScene.audioTrack.offsetFrames || 0)) * pxPerFrame}px`,
+                        width: `${(activeScene.audioTrack.duration * fps) * pxPerFrame}px`,
+                        '--layer-color': 'var(--color-audio-track)',
+                      } as React.CSSProperties & Record<string, string>}
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        const startX = e.clientX;
+                        const initialOffset = activeScene.audioTrack?.offsetFrames || 0;
+                        audioDragRef.current = { startX, initialOffset, sceneId: activeScene.id };
+
+                        const handleMove = (moveEvt: PointerEvent) => {
+                          if (!audioDragRef.current) return;
+                          const delta = Math.round((moveEvt.clientX - audioDragRef.current.startX) / pxPerFrame);
+                          updateAudioTrack(audioDragRef.current.sceneId, {
+                            offsetFrames: audioDragRef.current.initialOffset + delta,
+                          });
+                        };
+
+                        const handleUp = () => {
+                          audioDragRef.current = null;
+                          window.removeEventListener("pointermove", handleMove);
+                          window.removeEventListener("pointerup", handleUp);
+                        };
+
+                        window.addEventListener("pointermove", handleMove);
+                        window.addEventListener("pointerup", handleUp);
+                      }}
+                    >
+                      <Music size={9} className="mr-1 text-audio-track" />
+                      <span className="truncate">{activeScene.audioTrack.name}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Nested Layer Rows Track */}
+                {activeSceneLayers.map((layer) => {
+                  const isSelected = selectedLayerIds.includes(layer.id);
+                  const isLayerExpanded = !!expandedLayers[layer.id];
+                  const layerBlocks = activeSceneBlocks.filter((b) => b.layerId === layer.id);
+                  const presetBlocks = layerBlocks.filter((b): b is PresetAnimationBlock => !isKeyframeTrack(b));
+                  const keyframeTracks = layerBlocks.filter(isKeyframeTrack);
+                  const isSlotHovered = hoveredEmptySlot?.layerId === layer.id;
+
+                  return (
+                    <React.Fragment key={layer.id}>
+                      <div
+                        className={`group/row relative h-9 w-full flex items-center transition-colors ${
+                          isSelected ? "bg-input/20" : "bg-canvas/80 hover:bg-secondary/20"
+                        }`}
+                        onClick={() => {
+                          selectLayers([layer.id]);
+                        }}
+                        onPointerMove={(e) => handleLayerTrackPointerMove(e, layer)}
+                        onPointerLeave={() => {
+                          if (hoveredEmptySlot?.layerId === layer.id) {
+                            setHoveredEmptySlot(null);
+                          }
+                        }}
+                      >
+                        {/* Animation Blocks on this layer */}
+                        {presetBlocks.map((block) => {
+                          const leftPx = (activeSceneStartFrame + block.startFrame) * pxPerFrame;
+                          const widthPx = (block.endFrame - block.startFrame) * pxPerFrame;
+                          const clipType = getClipType(block.preset);
+                          const config = LAYER_CONFIG[clipType] || LAYER_CONFIG.animation;
+                          const isThisDragging = activeDragFeedback?.blockId === block.id;
+
+                          return (
+                            <div
+                              key={block.id}
+                              className={`group/clip absolute top-1 bottom-1 rounded-sm border transition-all cursor-grab active:cursor-grabbing shadow-xs flex items-center justify-between px-2 z-10 ${
+                                config.border
+                              } ${config.bg} ${
+                                isSelected
+                                  ? 'ring-2 ring-primary/80 border-primary bg-primary/20 shadow-md'
+                                  : 'hover:border-(--layer-color) hover:brightness-105'
+                              } ${isThisDragging ? 'scale-[1.01] ring-2 ring-primary shadow-lg z-30 cursor-grabbing' : ''}`}
+                              style={{
+                                left: `${leftPx}px`,
+                                width: `${Math.max(16, widthPx)}px`,
+                                '--layer-color': config.varName,
+                              } as React.CSSProperties & Record<string, string>}
+                              onPointerDown={(e) =>
+                                startBlockDrag(e, activeScene.id, block, "move", activeSceneDuration)
+                              }
+                            >
+                              {/* Live Duration Tooltip Badge floating above block during drag */}
+                              {isThisDragging && (
+                                <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-card/95 border border-border text-primary px-1.5 py-0.5 rounded text-[9px] font-mono shadow-md whitespace-nowrap z-40 animate-in fade-in">
+                                  {block.endFrame - block.startFrame}f ({((block.endFrame - block.startFrame) / fps).toFixed(2)}s)
+                                </div>
+                              )}
+
+                              {/* Left resize handle */}
+                              <div
+                                className="absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize opacity-0 group-hover/clip:opacity-100 bg-primary/30 rounded-l-xs hover:bg-primary/70 transition-opacity flex items-center justify-center z-20"
+                                onPointerDown={(e) =>
+                                  startBlockDrag(e, activeScene.id, block, "resize-left", activeSceneDuration)
+                                }
+                                title="Trim start"
+                              >
+                                <div className="w-[1px] h-3 bg-primary/80 rounded-full" />
+                              </div>
+
+                              <span className={`truncate text-[10px] font-medium capitalize ${config.text || 'text-foreground'}`}>
+                                {getPresetLabel(block.preset)}
+                              </span>
+
+                              {/* Right resize handle */}
+                              <div
+                                className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize opacity-0 group-hover/clip:opacity-100 bg-primary/30 rounded-r-xs hover:bg-primary/70 transition-opacity flex items-center justify-center z-20"
+                                onPointerDown={(e) =>
+                                  startBlockDrag(e, activeScene.id, block, "resize-right", activeSceneDuration)
+                                }
+                                title="Trim end"
+                              >
+                                <div className="w-[1px] h-3 bg-primary/80 rounded-full" />
+                              </div>
+                            </div>
+                          );
+                        })}
+
+                        {/* Interactive Dotted Line / Empty Spot Ghost Box on Hover */}
+                        {isSlotHovered && hoveredEmptySlot && (
+                          <div
+                            className="absolute top-1 bottom-1 rounded-sm border-2 border-dashed border-primary bg-primary/15 text-primary flex items-center justify-center gap-1 text-[9px] font-semibold cursor-pointer z-20 shadow-md transition-all animate-pulse"
+                            style={{
+                              left: `${hoveredEmptySlot.leftPx}px`,
+                              width: `${Math.max(36, hoveredEmptySlot.widthPx)}px`,
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEffectPickerSlot({
+                                layerId: layer.id,
+                                frame: hoveredEmptySlot.frame,
+                                leftPx: hoveredEmptySlot.leftPx,
+                                topPx: e.currentTarget.getBoundingClientRect().top,
+                              });
+                            }}
+                            title={`Click to add effect at frame ${hoveredEmptySlot.frame}`}
+                          >
+                            <div className="absolute -left-[1.5px] top-0 bottom-0 w-[2px] bg-primary shadow-sm" />
+                            <Plus size={10} strokeWidth={2.5} />
+                            <span className="text-[8px] uppercase tracking-wider font-mono">Add Effect</span>
+                            <div className="absolute -right-[1.5px] top-0 bottom-0 w-[2px] bg-primary/60" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Expanded Keyframe Track sub-tracks */}
+                      {isLayerExpanded &&
+                        keyframeTracks.map((track) => (
+                          <div
+                            key={track.id}
+                            className="h-7 border-b border-border bg-card/60 relative flex items-center"
+                          >
+                            {/* Track Keyframes */}
+                            {(track.keyframes || []).map((kf, kfIdx) => {
+                              const kfLeftPx = (activeSceneStartFrame + kf.frame) * pxPerFrame;
+                              return (
+                                <div
+                                  key={kfIdx}
+                                  className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 size-2.5 bg-primary hover:bg-foreground border border-primary/80 rotate-45 cursor-ew-resize transition-transform hover:scale-125 z-20 shadow-sm"
+                                  style={{ left: `${kfLeftPx}px` }}
+                                  onPointerDown={(e) =>
+                                    startKeyframeDrag(e, activeScene.id, track, kf.frame, activeSceneDuration)
+                                  }
+                                  title={`Keyframe at frame ${kf.frame} (${(kf.frame / fps).toFixed(2)}s)`}
+                                />
+                              );
+                            })}
+                          </div>
+                        ))}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Quick Effect Selection Popover */}
+            {effectPickerSlot && (
+              <div
+                className="fixed z-50 bg-card border border-border shadow-2xl rounded-lg p-2 text-foreground w-56 animate-in fade-in zoom-in-95 duration-100"
+                style={{
+                  left: `${Math.min(window.innerWidth - 240, Math.max(20, effectPickerSlot.leftPx - (scrollContainerRef.current?.scrollLeft || 0) + (leftHeadersRef.current?.clientWidth || 180)))}px`,
+                  top: `${Math.max(10, effectPickerSlot.topPx - 140)}px`,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-border px-1 text-[10px] font-mono text-primary font-semibold uppercase tracking-wider">
+                  <span className="flex items-center gap-1">
+                    <Sparkles size={11} />
+                    <span>Choose Effect</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground text-sm leading-none"
+                    onClick={() => setEffectPickerSlot(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  {BLOCK_PRESETS.filter((p) => p.id !== "camera-move").slice(0, 6).map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className="p-1.5 rounded bg-secondary/40 hover:bg-primary hover:text-primary-foreground border border-border hover:border-primary text-[10px] font-medium text-left truncate transition-colors"
+                      onClick={() => {
+                        handleAddBlock(
+                          activeScene.id,
+                          effectPickerSlot.layerId,
+                          preset.id,
+                          activeSceneDuration,
+                          effectPickerSlot.frame,
+                        );
+                        setEffectPickerSlot(null);
+                        setHoveredEmptySlot(null);
+                      }}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Global Timeline Needle Scrubber spanning full tracks height */}
+            <div
+              className="absolute top-0 bottom-0 w-[1.75px] bg-primary pointer-events-none z-40 shadow-[0_0_8px_var(--color-primary)] transition-[left] duration-75"
+              style={{
+                left: `${currentFrame * pxPerFrame}px`,
+              }}
+            >
+              {/* Needle Head */}
+              <div className="size-2.5 -ml-[4.5px] -mt-[1px] bg-primary rotate-45 rounded-[1px] shadow-sm pointer-events-auto cursor-ew-resize hover:scale-125 transition-transform" />
+            </div>
+          </div>
+        </div>
       </div>
-    )}
-  </section>
-);
+    </div>
+  );
 }

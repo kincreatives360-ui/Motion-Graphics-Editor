@@ -16,6 +16,7 @@ import {
   Activity,
   Zap,
   Camera as CameraIcon,
+  Crosshair,
   RotateCcw,
   MoreVertical,
   Diamond,
@@ -1456,8 +1457,162 @@ export function Inspector() {
                 </Accordion>
               </TabsContent>
 
-              {/* ANIMATE TAB: Camera Move Blocks */}
+              {/* ANIMATE TAB: Camera Settings & Camera Move Blocks */}
               <TabsContent value="animate" className="mt-0 focus-visible:outline-none">
+                {/* Active Camera Settings & Focus Accordion */}
+                <Accordion
+                  type="multiple"
+                  defaultValue={["camera-settings"]}
+                  className="w-full mb-3 space-y-0"
+                >
+                  <AccordionItem
+                    value="camera-settings"
+                    className="border border-[#23262c] bg-[#15171b] rounded-lg overflow-hidden shadow-xs border-b-0"
+                    data-testid="camera-settings-panel"
+                  >
+                    <AccordionTrigger className="py-2 px-2.5 text-[10.5px] font-semibold text-[#e2e8f0] hover:text-white hover:no-underline bg-[#16181d] border-b border-[#202227]/80 [&[data-state=closed]]:border-b-0">
+                      <div className="flex items-center gap-1.5">
+                        <CameraIcon size={12} className="text-[#38bdf8]" />
+                        <span>Camera Settings & Focus</span>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="p-2.5 pt-2 text-left pb-2.5">
+                      <div className="flex items-center justify-between mb-2 pb-1.5 border-b border-[#202227]">
+                        <span className="text-[8.5px] text-[#787c88] uppercase tracking-wider font-medium">Depth & Optics</span>
+                        <button
+                          type="button"
+                          id="button-reset-camera-animate"
+                          data-testid="button-reset-camera-animate"
+                          className="text-[8.5px] text-[#81838a] hover:text-[#e2e8f0] flex items-center gap-1 transition-colors px-1.5 py-0.5 rounded bg-[#1c1e24] hover:bg-[#252830] border border-[#2d3038]"
+                          onClick={() => {
+                            setIsCameraSelected(true);
+                            setActiveTool("camera");
+                            resetCamera();
+                          }}
+                          title="Reset all camera parameters (Position, Rotation, FOV, and Focus Distance)"
+                        >
+                          <RotateCcw size={9} />
+                          <span>Reset</span>
+                        </button>
+                      </div>
+
+                      {/* Camera Focus Distance Control */}
+                      <div className="mb-2.5">
+                        <div className="flex items-center justify-between text-[9px] mb-1">
+                          <div className="flex items-center gap-1.5 text-[#94a3b8] font-medium">
+                            <Crosshair size={11} className="text-[#34d399]" />
+                            <span>Camera Focus Distance</span>
+                          </div>
+                          <span className="font-mono text-[#34d399] font-bold text-[10px]">
+                            {Math.round(camera.focusDistance ?? 1000)}px
+                          </span>
+                        </div>
+
+                        {/* Interactive range slider for smooth focus shifting */}
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <input
+                            type="range"
+                            min={50}
+                            max={3000}
+                            step={10}
+                            value={Math.round(camera.focusDistance ?? 1000)}
+                            data-testid="slider-camera-focus-distance"
+                            className="flex-1 h-1.5 bg-[#20232a] rounded-lg appearance-none cursor-pointer accent-[#34d399]"
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              updateCamera({ focusDistance: isNaN(val) ? 1000 : val });
+                            }}
+                          />
+                          <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 w-20 focus-within:border-[#34d399]">
+                            <input
+                              type="number"
+                              className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono text-right"
+                              value={Math.round(camera.focusDistance ?? 1000)}
+                              data-testid="input-camera-focus-distance-animate"
+                              min={10}
+                              max={10000}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                updateCamera({ focusDistance: isNaN(val) ? 1000 : val });
+                              }}
+                            />
+                            <span className="text-[8px] text-[#6c6e75] font-mono">px</span>
+                          </label>
+                        </div>
+
+                        {/* Quick Focus Depth Presets */}
+                        <div className="flex items-center gap-1">
+                          {[
+                            { label: "Near (300px)", value: 300 },
+                            { label: "Mid (1000px)", value: 1000 },
+                            { label: "Far (2000px)", value: 2000 },
+                          ].map((preset) => {
+                            const isCurrent = Math.abs((camera.focusDistance ?? 1000) - preset.value) < 50;
+                            return (
+                              <button
+                                key={preset.value}
+                                type="button"
+                                className={`flex-1 py-0.5 px-1 rounded text-[8px] font-mono transition-colors border ${
+                                  isCurrent
+                                    ? "bg-[#064e3b]/70 text-[#6ee7b7] border-[#10b981]/60 font-semibold"
+                                    : "bg-[#181a20] hover:bg-[#20232b] text-[#9ca1ad] border-[#272b35]"
+                                }`}
+                                onClick={() => updateCamera({ focusDistance: preset.value })}
+                              >
+                                {preset.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Quick Optics Row (FOV & Aperture) */}
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#202227]">
+                        <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#38bdf8]" title="Field of View (degrees)">
+                          <ScrubbableLabel
+                            value={camera.fov ?? 60}
+                            onChange={(fov) => updateCamera({ fov })}
+                            min={10}
+                            max={160}
+                            step={1}
+                            className="text-[8px] font-mono text-[#6c6e75] hover:text-[#38bdf8] transition-colors select-none"
+                          >
+                            FOV
+                          </ScrubbableLabel>
+                          <input
+                            type="number"
+                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono"
+                            min={10}
+                            max={160}
+                            value={camera.fov ?? 60}
+                            data-testid="input-camera-fov-animate"
+                            onChange={(e) => {
+                              const val = parseFloat(e.target.value);
+                              updateCamera({ fov: isNaN(val) ? 60 : val });
+                            }}
+                          />
+                        </label>
+
+                        <label className="flex items-center gap-1 bg-[#1a1b1e] border border-[#2a2c30] rounded px-1.5 h-6 focus-within:border-[#38bdf8] relative" title="Aperture f-stop">
+                          <span className="text-[8px] font-mono text-[#6c6e75]">Apert</span>
+                          <select
+                            className="w-full bg-transparent text-[9px] text-[#d8d9dc] outline-none font-mono cursor-pointer appearance-none pr-3"
+                            value={camera.aperture ?? 2.8}
+                            onChange={(e) => updateCamera({ aperture: parseFloat(e.target.value) })}
+                          >
+                            <option value={1.4} className="bg-[#1a1b1e] text-[#d8d9dc]">f/1.4</option>
+                            <option value={2.8} className="bg-[#1a1b1e] text-[#d8d9dc]">f/2.8</option>
+                            <option value={4.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/4.0</option>
+                            <option value={8.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/8.0</option>
+                            <option value={16.0} className="bg-[#1a1b1e] text-[#d8d9dc]">f/16</option>
+                          </select>
+                          <span className="pointer-events-none absolute right-1 text-[8px] text-[#65686e]">⌄</span>
+                        </label>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+
                 <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#202227]">
                   <div className="flex items-center gap-1.5">
                     <CameraIcon size={12} className="text-[#34d399]" />

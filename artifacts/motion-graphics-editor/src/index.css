@@ -25,6 +25,17 @@
   --color-accent-foreground: hsl(var(--accent-foreground));
   --color-destructive: hsl(var(--destructive));
   --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-canvas: var(--color-canvas);
+  --color-shot: var(--color-shot);
+  --color-shape: var(--color-shape);
+  --color-text: var(--color-text);
+  --color-audio-track: var(--color-audio-track);
+  --color-animation: var(--color-animation);
+  --color-camera-zoom: var(--color-camera-zoom);
+  --color-light-key: var(--color-light-key);
+  --color-effect: var(--color-effect);
+  --color-brand-green: var(--color-brand-green);
+  --color-brand-amber: var(--color-brand-amber);
   --font-sans: var(--app-font-sans);
   --font-mono: var(--app-font-mono);
   --radius-sm: calc(var(--radius) - 2px);
@@ -72,6 +83,17 @@
   --text-dim: #77797f;
   --text-soft: #a4a5aa;
   --blue: #159fe8;
+  --color-canvas: #0c0d10;
+  --color-shot: #0284c7;
+  --color-shape: #38bdf8;
+  --color-text: #a78bfa;
+  --color-audio-track: #c084fc;
+  --color-animation: #6366f1;
+  --color-camera-zoom: #10b981;
+  --color-light-key: #eab308;
+  --color-effect: #ec4899;
+  --color-brand-green: #10b981;
+  --color-brand-amber: #f59e0b;
 }
 
 .dark {

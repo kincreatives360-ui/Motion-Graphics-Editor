@@ -108,7 +108,7 @@ describe("snapping.ts", () => {
 
     it("snaps left edge to an edge candidate within threshold", () => {
       // moving.x = 398 is within threshold (6) of candidate 400 (diff 2)
-      const moving: Transform = { x: 398, y: 150, width: 100, height: 100, rotation: 0, depth: 0 };
+      const moving: Transform = { x: 398, y: 150, width: 100, height: 100, rotation: 0 };
       const res = snapTransform(moving, defaultCandidates, [], 6);
 
       expect(res.x).toBe(400);
@@ -120,7 +120,7 @@ describe("snapping.ts", () => {
 
     it("snaps right edge to an edge candidate within threshold", () => {
       // moving right edge = x + width = 303 + 100 = 403, diff 3 from candidate 400
-      const moving: Transform = { x: 303, y: 150, width: 100, height: 100, rotation: 0, depth: 0 };
+      const moving: Transform = { x: 303, y: 150, width: 100, height: 100, rotation: 0 };
       const res = snapTransform(moving, defaultCandidates, [], 6);
 
       expect(res.x).toBe(300); // 300 + 100 = 400
@@ -131,7 +131,7 @@ describe("snapping.ts", () => {
 
     it("snaps center to a center candidate within threshold", () => {
       // moving center = x + width/2 = 448 + 50 = 498, diff 2 from candidate 500 (center)
-      const moving: Transform = { x: 448, y: 150, width: 100, height: 100, rotation: 0, depth: 0 };
+      const moving: Transform = { x: 448, y: 150, width: 100, height: 100, rotation: 0 };
       const res = snapTransform(moving, defaultCandidates, [], 6);
 
       expect(res.x).toBe(450); // 450 + 50 = 500
@@ -143,7 +143,7 @@ describe("snapping.ts", () => {
     it("snaps both X and Y simultaneously to respective candidates", () => {
       // X center: 911 + 50 = 961 (close to 960, diff 1)
       // Y top edge: 297 (close to 300, diff 3)
-      const moving: Transform = { x: 911, y: 297, width: 100, height: 100, rotation: 0, depth: 0 };
+      const moving: Transform = { x: 911, y: 297, width: 100, height: 100, rotation: 0 };
       const res = snapTransform(moving, defaultCandidates, [], 6);
 
       expect(res.x).toBe(910); // 910 + 50 = 960
@@ -159,7 +159,7 @@ describe("snapping.ts", () => {
 
     it("does not snap when distance exceeds threshold", () => {
       // moving.x = 415 is 15px away from 400 (> threshold 6)
-      const moving: Transform = { x: 415, y: 150, width: 100, height: 100, rotation: 0, depth: 0 };
+      const moving: Transform = { x: 415, y: 150, width: 100, height: 100, rotation: 0 };
       const res = snapTransform(moving, defaultCandidates, [], 6);
 
       expect(res.x).toBe(415);
@@ -178,13 +178,13 @@ describe("snapping.ts", () => {
         };
 
         // 1.0px difference: should snap left edge to 400
-        const closeMoving: Transform = { x: targetCandidate - 1.0, y: 100, width: 100, height: 100, rotation: 0, depth: 0 };
+        const closeMoving: Transform = { x: targetCandidate - 1.0, y: 100, width: 100, height: 100, rotation: 0 };
         const closeRes = snapTransform(closeMoving, candidates, [], threshold);
         expect(closeRes.x).toBe(400);
         expect(closeRes.guides.length).toBeGreaterThan(0);
 
         // 2.0px difference: exceeds 1.5px threshold, so does NOT snap (preserves fine sub-pixel control)
-        const farMoving: Transform = { x: targetCandidate - 2.0, y: 100, width: 100, height: 100, rotation: 0, depth: 0 };
+        const farMoving: Transform = { x: targetCandidate - 2.0, y: 100, width: 100, height: 100, rotation: 0 };
         const farRes = snapTransform(farMoving, candidates, [], threshold);
         expect(farRes.x).toBe(398);
         expect(farRes.guides).toHaveLength(0);
@@ -200,13 +200,13 @@ describe("snapping.ts", () => {
         };
 
         // 18px difference: snaps easily from far away on canvas
-        const distantMoving: Transform = { x: targetCandidate - 18, y: 100, width: 100, height: 100, rotation: 0, depth: 0 };
+        const distantMoving: Transform = { x: targetCandidate - 18, y: 100, width: 100, height: 100, rotation: 0 };
         const snapRes = snapTransform(distantMoving, candidates, [], threshold);
         expect(snapRes.x).toBe(400);
         expect(snapRes.guides.length).toBeGreaterThan(0);
 
         // 30px difference: exceeds 24px threshold on all test points, does not snap
-        const tooFarMoving: Transform = { x: targetCandidate + 30, y: 100, width: 100, height: 100, rotation: 0, depth: 0 };
+        const tooFarMoving: Transform = { x: targetCandidate + 30, y: 100, width: 100, height: 100, rotation: 0 };
         const noSnapRes = snapTransform(tooFarMoving, candidates, [], threshold);
         expect(noSnapRes.x).toBe(430);
         expect(noSnapRes.guides).toHaveLength(0);
@@ -225,7 +225,7 @@ describe("snapping.ts", () => {
         const layer2 = createMockLayer("l2", { x: 500, y: 100, width: 100, height: 100 });
 
         // Moving layer placed slightly off target at x = 302 (diff 2 < threshold 6)
-        const moving: Transform = { x: 302, y: 100, width: 100, height: 100, rotation: 0, depth: 0 };
+        const moving: Transform = { x: 302, y: 100, width: 100, height: 100, rotation: 0 };
         const res = snapTransform(moving, { x: [], y: [] }, [layer1, layer2], 6);
 
         expect(res.x).toBe(300);
@@ -247,7 +247,7 @@ describe("snapping.ts", () => {
         const layer2 = createMockLayer("l2", { x: 300, y: 100, width: 100, height: 100 });
 
         // Moving layer placed at x = 497 (diff 3 < threshold 6)
-        const moving: Transform = { x: 497, y: 100, width: 100, height: 100, rotation: 0, depth: 0 };
+        const moving: Transform = { x: 497, y: 100, width: 100, height: 100, rotation: 0 };
         const res = snapTransform(moving, { x: [], y: [] }, [layer1, layer2], 6);
 
         expect(res.x).toBe(500);

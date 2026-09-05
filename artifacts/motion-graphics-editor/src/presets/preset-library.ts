@@ -1,5 +1,10 @@
 import type { AnimationBlock, BlockPreset } from "../store/animation-blocks";
 import type { Layer, Scene, Camera } from "../store/editor-store";
+import { REMOCN_ANIMATION_PRESETS } from "./remocn-presets";
+import { REMOCN_SHADERS, type RemocnShaderDefinition, renderRemocnShaderToCanvas2D } from "./remocn-shaders";
+
+export { REMOCN_ANIMATION_PRESETS, REMOCN_SHADERS, renderRemocnShaderToCanvas2D };
+export type { RemocnShaderDefinition };
 
 export interface PresetBlockDefinition {
   preset: BlockPreset;
@@ -38,6 +43,7 @@ export interface SceneTemplate {
  * Hand-authored Animation Presets covering Entrances, Exits, and Camera moves
  */
 export const BUILT_IN_ANIMATION_PRESETS: AnimationPreset[] = [
+  ...REMOCN_ANIMATION_PRESETS,
   // --- Entrances ---
   {
     id: "punchy-entrance",

@@ -10,9 +10,7 @@ import {
   ZoomOut,
   ChevronDown,
   Check,
-  RotateCcw,
   Maximize2,
-  Crosshair,
   UploadCloud,
 } from "lucide-react";
 import {
@@ -408,26 +406,6 @@ export function CanvasStage() {
 
 
 
-  const handleFocusPillPointerDown = (e: React.PointerEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    const startX = e.clientX;
-    const startFocus = activeScene?.camera?.focusDistance ?? 1000;
-
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const newFocus = Math.max(0, Math.round(startFocus + deltaX * 3));
-      updateCamera({ focusDistance: newFocus });
-    };
-
-    const onPointerUp = () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-  };
 
   const nativeWidth =
     aspectRatio === "9:16" ? 1080 : aspectRatio === "1:1" ? 1080 : 1920;
@@ -1927,10 +1905,6 @@ export function CanvasStage() {
     setZoomDropdownOpen(false);
   };
 
-  const handleResetPan = () => {
-    setPan({ x: 0, y: 0 });
-    setZoomDropdownOpen(false);
-  };
 
   const handleStepZoom = (delta: number) => {
     setZoom((prev) => Math.min(500, Math.max(10, Math.round(prev + delta))));
@@ -2321,20 +2295,6 @@ export function CanvasStage() {
           );
         })()}
 
-        {/* Interactive Canvas Focus Pill - ONLY appears when Camera is clicked/active */}
-        {isCameraActive && (
-          <div
-            className="canvas-focus-pill absolute bottom-3 left-1/2 -translate-x-1/2 z-15 flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#0d1217]/95 border border-[#10b981]/70 shadow-[0_4px_20px_rgba(0,0,0,0.6)] text-[9px] font-mono select-none backdrop-blur-xs cursor-ew-resize hover:bg-[#131d24] hover:border-[#34d399] transition-all group animate-in fade-in zoom-in-95 duration-150"
-            title="Click and drag horizontally to shift Camera Focus Distance"
-            data-testid="canvas-focus-pill"
-            onPointerDown={handleFocusPillPointerDown}
-          >
-            <Crosshair size={11} className="text-[#34d399] group-hover:rotate-90 transition-transform duration-300 flex-shrink-0" />
-            <span className="text-[#94a3b8] font-sans font-medium">Camera Focus:</span>
-            <span className="text-[#34d399] font-bold">{Math.round(activeScene?.camera?.focusDistance ?? 1000)}px</span>
-            <span className="text-[7.5px] text-[#6ee7b7]/70 hidden sm:inline">(drag ↔)</span>
-          </div>
-        )}
       </div>
 
       {/* Dev-Only FPS and Pipeline Performance Counter */}
@@ -2454,18 +2414,6 @@ export function CanvasStage() {
               </button>
             </div>
 
-            <button
-              className="zoom-dropdown-item"
-              type="button"
-              role="menuitem"
-              data-testid="button-reset-pan"
-              onClick={handleResetPan}
-            >
-              <span className="flex items-center gap-1.5 text-[#9a9ca1]">
-                <RotateCcw size={10} />
-                <span>Reset Pan</span>
-              </span>
-            </button>
           </div>
         )}
       </div>

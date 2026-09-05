@@ -280,11 +280,11 @@ describe("local-store persistence", () => {
     const loaded = await loadDocument("Layer Effects Doc");
     expect(loaded).toBeDefined();
     const layer = loaded?.scenes[0].layers[0];
-    expect(layer?.effects?.length).toBe(2);
+    expect(layer?.effects.length).toBe(2);
     expect(layer?.effectsOrder).toEqual(["lfx-ds-1", "lfx-glow-1"]);
-    expect(layer?.effects?.[0].id).toBe("lfx-glow-1");
-    expect(layer?.effects?.[0].type).toBe("glow");
-    expect(layer?.effects?.[1].id).toBe("lfx-ds-1");
-    expect(layer?.effects?.[1].visible).toBe(false);
+    expect(layer?.effects[0].id).toBe("lfx-glow-1");
+    expect(layer?.effects[0].type).toBe("glow");
+    expect(layer?.effects[1].id).toBe("lfx-ds-1");
+    expect(layer?.effects[1].visible).toBe(false);
   });
 });

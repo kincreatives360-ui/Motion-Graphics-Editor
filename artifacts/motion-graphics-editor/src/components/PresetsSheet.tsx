@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Sheet,
   SheetContent,
@@ -14,12 +14,20 @@ import {
   DialogDescription,
   DialogFooter,
 } from "./ui/dialog";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "./ui/tabs";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Input } from "./ui/input";
+import { ScrollArea } from "./ui/scroll-area";
 import { useEditorStore, useEditorUIStore } from "../store/editor-store";
 import {
   BUILT_IN_ANIMATION_PRESETS,
   BUILT_IN_SCENE_TEMPLATES,
+  REMOCN_SHADERS,
+  renderRemocnShaderToCanvas2D,
   type AnimationPreset,
   type SceneTemplate,
+  type RemocnShaderDefinition,
 } from "../presets/preset-library";
 import {
   getUserPresets,
@@ -30,11 +38,9 @@ import {
   SlidersHorizontal,
   Sparkles,
   Layers,
-  Play,
   Check,
   Trash2,
   Plus,
-  Video,
   Camera as CameraIcon,
   LogIn,
   LogOut,
@@ -43,7 +49,44 @@ import {
   AlertCircle,
   Clock,
   LayoutTemplate,
+  Waves,
+  Eye,
+  Zap,
 } from "lucide-react";
+
+/**
+ * Animated Canvas Mini-Preview for Remocn Shaders
+ */
+function ShaderPreviewCanvas({ shader }: { shader: RemocnShaderDefinition }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    let animId: number;
+    let frame = 0;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const render = () => {
+      frame++;
+      renderRemocnShaderToCanvas2D(ctx, shader.id, canvas.width, canvas.height, frame, 30);
+      animId = requestAnimationFrame(render);
+    };
+
+    animId = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(animId);
+  }, [shader.id]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={160}
+      height={90}
+      className="w-full h-24 rounded-md object-cover border border-[#262a34] bg-[#0d0f14]"
+    />
+  );
+}
 
 export function PresetsSheet() {
   const presetsOpen = useEditorUIStore((state) => state.presetsOpen);
@@ -57,6 +100,7 @@ export function PresetsSheet() {
   const selectedLayerIds = useEditorStore((state) => state.selectedLayerIds);
   const applyAnimationPreset = useEditorStore((state) => state.applyAnimationPreset);
   const applySceneTemplate = useEditorStore((state) => state.applySceneTemplate);
+  const addLayer = useEditorStore((state) => state.addLayer);
 
   const activeScene = useMemo(
     () => scenes.find((s) => s.id === activeSceneId),
@@ -66,7 +110,10 @@ export function PresetsSheet() {
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [animCategory, setAnimCategory] = useState<
-    "all" | "entrance" | "exit" | "camera" | "user"
+    "all" | "remocn" | "entrance" | "exit" | "camera" | "user"
+  >("all");
+  const [shaderCategory, setShaderCategory] = useState<
+    "all" | "gradient" | "organic" | "lighting" | "geometric" | "distortion"
   >("all");
   const [appliedPresetId, setAppliedPresetId] = useState<string | null>(null);
 
@@ -107,7 +154,9 @@ export function PresetsSheet() {
 
   const filteredAnimationPresets = useMemo(() => {
     return allAnimationPresets.filter((preset) => {
-      if (animCategory !== "all" && preset.category !== animCategory) {
+      if (animCategory === "remocn") {
+        if (!preset.id.startsWith("remocn-") && !preset.name.includes("Remocn")) return false;
+      } else if (animCategory !== "all" && preset.category !== animCategory) {
         return false;
       }
       if (searchQuery.trim()) {
@@ -120,6 +169,22 @@ export function PresetsSheet() {
       return true;
     });
   }, [allAnimationPresets, animCategory, searchQuery]);
+
+  const filteredShaders = useMemo(() => {
+    return REMOCN_SHADERS.filter((shader) => {
+      if (shaderCategory !== "all" && shader.category !== shaderCategory) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        return (
+          shader.name.toLowerCase().includes(q) ||
+          shader.description.toLowerCase().includes(q)
+        );
+      }
+      return true;
+    });
+  }, [shaderCategory, searchQuery]);
 
   // Combine built-in + user scene templates
   const userTemplates = useMemo<SceneTemplate[]>(() => {
@@ -154,10 +219,34 @@ export function PresetsSheet() {
     }, 1400);
   };
 
+  const handleApplyShaderAsLayer = (shader: RemocnShaderDefinition) => {
+    // Add a new full-bleed shape layer configured with this shader aesthetic
+    addLayer(activeSceneId, {
+      name: `${shader.name} Shader Background`,
+      type: "shape",
+      shape: "rectangle",
+      transform: {
+        x: 960,
+        y: 540,
+        width: 1920,
+        height: 1080,
+        rotation: 0,
+        depth: 1000,
+      },
+      fill: shader.colors[0] || "#090d16",
+      opacity: 0.95,
+      visible: true,
+      locked: false,
+    });
+    setAppliedPresetId(shader.id);
+    setTimeout(() => {
+      setAppliedPresetId((prev) => (prev === shader.id ? null : prev));
+    }, 1400);
+  };
+
   const handleTemplateCardClick = (template: SceneTemplate) => {
     const hasLayers = (activeScene?.layers?.length || 0) > 0;
     if (!hasLayers) {
-      // Direct merge if scene is currently empty
       applySceneTemplate(template, "merge");
       setAppliedPresetId(template.id);
       setTimeout(() => setAppliedPresetId(null), 1400);
@@ -196,49 +285,47 @@ export function PresetsSheet() {
                   <SlidersHorizontal size={13} strokeWidth={2} />
                 </div>
                 <SheetTitle className="text-sm font-semibold tracking-tight text-white flex items-center gap-1.5">
-                  Motion Presets & Templates
+                  Presets & Shaders (remocn)
                 </SheetTitle>
               </div>
               <SheetDescription className="text-[10px] text-[#8c919c] leading-relaxed">
-                Inspectable, modular animation blocks and ready-to-insert scene layouts.
+                Production-grade animation presets, GLSL shaders, and scene layouts from remocn.
               </SheetDescription>
             </SheetHeader>
 
-            {/* Tab Selectors: Animations vs Templates */}
-            <div className="flex items-center gap-1 bg-[#1a1c22] p-0.5 rounded-lg border border-[#252830] mt-3" role="tablist" aria-label="Preset categories">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={presetsTab === "animations"}
-                aria-label={`Animation Presets, ${allAnimationPresets.length} available`}
-                className={`flex-1 py-1.5 px-3 text-[10.5px] font-medium rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                  presetsTab === "animations"
-                    ? "bg-[#252a34] text-white shadow-sm font-semibold"
-                    : "text-[#828690] hover:text-[#c4c7d0]"
-                }`}
-                onClick={() => setPresetsTab("animations")}
-                data-testid="tab-presets-animations"
-              >
-                <Sparkles size={12} className={presetsTab === "animations" ? "text-[#38bdf8]" : ""} aria-hidden="true" />
-                <span>Animations ({allAnimationPresets.length})</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={presetsTab === "templates"}
-                aria-label={`Scene Templates, ${allTemplates.length} available`}
-                className={`flex-1 py-1.5 px-3 text-[10.5px] font-medium rounded-md transition-all flex items-center justify-center gap-1.5 ${
-                  presetsTab === "templates"
-                    ? "bg-[#252a34] text-white shadow-sm font-semibold"
-                    : "text-[#828690] hover:text-[#c4c7d0]"
-                }`}
-                onClick={() => setPresetsTab("templates")}
-                data-testid="tab-presets-templates"
-              >
-                <LayoutTemplate size={12} className={presetsTab === "templates" ? "text-[#38bdf8]" : ""} aria-hidden="true" />
-                <span>Templates ({allTemplates.length})</span>
-              </button>
-            </div>
+            {/* shadcn Tabs Primitives */}
+            <Tabs
+              value={presetsTab}
+              onValueChange={(val) => setPresetsTab(val as "animations" | "shaders" | "templates")}
+              className="w-full mt-3"
+            >
+              <TabsList className="grid grid-cols-3 bg-[#1a1c22] border border-[#252830] p-0.5 rounded-lg h-8 w-full">
+                <TabsTrigger
+                  value="animations"
+                  data-testid="tab-presets-animations"
+                  className="text-[10px] h-7 data-[state=active]:bg-[#252a34] data-[state=active]:text-white data-[state=active]:shadow-sm rounded-md font-medium text-[#828690] flex items-center gap-1.5 transition-all"
+                >
+                  <Sparkles size={11} className="text-[#38bdf8]" />
+                  <span>Animate</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="shaders"
+                  data-testid="tab-presets-shaders"
+                  className="text-[10px] h-7 data-[state=active]:bg-[#252a34] data-[state=active]:text-white data-[state=active]:shadow-sm rounded-md font-medium text-[#828690] flex items-center gap-1.5 transition-all"
+                >
+                  <Waves size={11} className="text-[#a855f7]" />
+                  <span>Shaders</span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="templates"
+                  data-testid="tab-presets-templates"
+                  className="text-[10px] h-7 data-[state=active]:bg-[#252a34] data-[state=active]:text-white data-[state=active]:shadow-sm rounded-md font-medium text-[#828690] flex items-center gap-1.5 transition-all"
+                >
+                  <LayoutTemplate size={11} className="text-[#10b981]" />
+                  <span>Templates</span>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
 
             {/* Search Bar */}
             <div className="relative mt-2.5">
@@ -247,58 +334,93 @@ export function PresetsSheet() {
                 className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#5c616c]"
                 aria-hidden="true"
               />
-              <input
+              <Input
                 type="text"
                 placeholder={
                   presetsTab === "animations"
                     ? "Filter animation blocks by name..."
+                    : presetsTab === "shaders"
+                    ? "Filter remocn shaders..."
                     : "Search scene templates..."
                 }
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                aria-label={presetsTab === "animations" ? "Filter animation presets" : "Search scene templates"}
-                className="w-full bg-[#171920] border border-[#252831] rounded-md text-[10px] text-[#e2e4e9] placeholder-[#5c616c] pl-7 pr-3 py-1.5 outline-none focus:border-[#38bdf8]/60 transition-colors"
+                aria-label="Search presets and shaders"
+                className="w-full bg-[#171920] border-[#252831] text-[10px] text-[#e2e4e9] placeholder:text-[#5c616c] pl-7 pr-3 h-8 focus-visible:ring-1 focus-visible:ring-[#38bdf8]/60"
                 data-testid="input-presets-search"
               />
             </div>
 
             {/* Category Filter Chips for Animations */}
             {presetsTab === "animations" && (
-              <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto pb-0.5 no-scrollbar" role="toolbar" aria-label="Animation categories filter">
+              <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto pb-0.5 no-scrollbar" role="toolbar">
                 {(
                   [
                     { id: "all", label: "All" },
+                    { id: "remocn", label: "Remocn Presets" },
                     { id: "entrance", label: "Entrances" },
                     { id: "exit", label: "Exits" },
                     { id: "camera", label: "Camera" },
                     { id: "user", label: `My Presets (${userAnimationPresets.length})` },
                   ] as const
                 ).map((c) => (
-                  <button
+                  <Button
                     key={c.id}
                     type="button"
-                    aria-pressed={animCategory === c.id}
-                    aria-label={`Filter by ${c.label}`}
-                    className={`text-[9px] px-2.5 py-1 rounded-full whitespace-nowrap transition-colors border ${
+                    variant={animCategory === c.id ? "default" : "outline"}
+                    size="sm"
+                    className={`text-[9px] px-2.5 py-0.5 h-6 rounded-full whitespace-nowrap transition-colors border ${
                       animCategory === c.id
-                        ? "bg-[#38bdf8]/15 text-[#38bdf8] border-[#38bdf8]/40 font-medium"
-                        : "bg-[#181a20] text-[#7a7f8c] border-[#252832] hover:text-[#c4c7d0]"
+                        ? "bg-[#38bdf8]/15 text-[#38bdf8] border-[#38bdf8]/40 hover:bg-[#38bdf8]/25"
+                        : "bg-[#181a20] text-[#7a7f8c] border-[#252832] hover:text-[#c4c7d0] hover:bg-[#20232b]"
                     }`}
                     onClick={() => setAnimCategory(c.id)}
                     data-testid={`filter-category-${c.id}`}
                   >
                     {c.label}
-                  </button>
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {/* Category Filter Chips for Shaders */}
+            {presetsTab === "shaders" && (
+              <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto pb-0.5 no-scrollbar" role="toolbar">
+                {(
+                  [
+                    { id: "all", label: "All" },
+                    { id: "gradient", label: "Gradients" },
+                    { id: "organic", label: "Organic" },
+                    { id: "lighting", label: "Lighting" },
+                    { id: "geometric", label: "Geometric" },
+                    { id: "distortion", label: "Distortion" },
+                  ] as const
+                ).map((c) => (
+                  <Button
+                    key={c.id}
+                    type="button"
+                    variant={shaderCategory === c.id ? "default" : "outline"}
+                    size="sm"
+                    className={`text-[9px] px-2.5 py-0.5 h-6 rounded-full whitespace-nowrap transition-colors border ${
+                      shaderCategory === c.id
+                        ? "bg-[#a855f7]/15 text-[#c084fc] border-[#a855f7]/40 hover:bg-[#a855f7]/25"
+                        : "bg-[#181a20] text-[#7a7f8c] border-[#252832] hover:text-[#c4c7d0] hover:bg-[#20232b]"
+                    }`}
+                    onClick={() => setShaderCategory(c.id)}
+                    data-testid={`filter-shader-${c.id}`}
+                  >
+                    {c.label}
+                  </Button>
                 ))}
               </div>
             )}
           </div>
 
           {/* Body Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <ScrollArea className="flex-1 p-4">
             {/* ANIMATIONS TAB CONTENT */}
             {presetsTab === "animations" && (
-              <>
+              <div className="space-y-3">
                 {/* Target context header */}
                 <div
                   className={`p-2.5 rounded-lg border text-[9.5px] flex items-center gap-2 ${
@@ -341,6 +463,7 @@ export function PresetsSheet() {
                       const isApplied = appliedPresetId === preset.id;
                       const isCamera = preset.category === "camera";
                       const canApply = selectedLayerIds.length > 0 || isCamera;
+                      const isRemocn = preset.id.startsWith("remocn-") || preset.name.includes("Remocn");
 
                       return (
                         <div
@@ -364,65 +487,67 @@ export function PresetsSheet() {
                         >
                           {/* Header row */}
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-1.5">
                               <span className="font-medium text-[11px] text-white group-hover:text-[#38bdf8] transition-colors">
                                 {preset.name}
                               </span>
+                              {isRemocn && (
+                                <Badge variant="secondary" className="text-[7.5px] px-1 py-0 bg-[#a855f7]/20 text-[#c084fc] border-[#a855f7]/30">
+                                  remocn
+                                </Badge>
+                              )}
                               {preset.isUserCreated ? (
-                                <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/30 font-medium">
+                                <Badge variant="outline" className="text-[7.5px] px-1 py-0 bg-[#8b5cf6]/20 text-[#c4b5fd] border-[#8b5cf6]/30">
                                   User
-                                </span>
+                                </Badge>
                               ) : isCamera ? (
-                                <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#10b981]/20 text-[#6ee7b7] border border-[#10b981]/30 font-medium flex items-center gap-0.5">
-                                  <CameraIcon size={8} aria-hidden="true" /> Camera
-                                </span>
+                                <Badge variant="outline" className="text-[7.5px] px-1 py-0 bg-[#10b981]/20 text-[#6ee7b7] border-[#10b981]/30 flex items-center gap-0.5">
+                                  <CameraIcon size={7} /> Camera
+                                </Badge>
                               ) : preset.category === "entrance" ? (
-                                <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#38bdf8]/15 text-[#7dd3fc] border border-[#38bdf8]/30 font-medium flex items-center gap-0.5">
-                                  <LogIn size={8} aria-hidden="true" /> In
-                                </span>
+                                <Badge variant="outline" className="text-[7.5px] px-1 py-0 bg-[#38bdf8]/15 text-[#7dd3fc] border-[#38bdf8]/30 flex items-center gap-0.5">
+                                  <LogIn size={7} /> In
+                                </Badge>
                               ) : (
-                                <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#f43f5e]/15 text-[#fda4af] border border-[#f43f5e]/30 font-medium flex items-center gap-0.5">
-                                  <LogOut size={8} aria-hidden="true" /> Out
-                                </span>
+                                <Badge variant="outline" className="text-[7.5px] px-1 py-0 bg-[#f43f5e]/15 text-[#fda4af] border-[#f43f5e]/30 flex items-center gap-0.5">
+                                  <LogOut size={7} /> Out
+                                </Badge>
                               )}
                             </div>
 
                             <div className="flex items-center gap-1.5">
                               {preset.isUserCreated && (
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
                                   title="Delete user preset"
-                                  aria-label={`Delete custom preset ${preset.name}`}
                                   onClick={(e) => handleDeleteUserPreset(e, preset.id)}
-                                  className="text-[#64748b] hover:text-[#f87171] p-1 rounded hover:bg-[#232731] transition-colors"
+                                  className="h-6 w-6 text-[#64748b] hover:text-[#f87171] hover:bg-[#232731]"
                                   data-testid={`button-delete-preset-${preset.id}`}
                                 >
-                                  <Trash2 size={11} aria-hidden="true" />
-                                </button>
+                                  <Trash2 size={11} />
+                                </Button>
                               )}
 
-                              <button
-                                type="button"
+                              <Button
+                                size="sm"
                                 disabled={!canApply}
-                                aria-label={isApplied ? `Applied preset ${preset.name}` : `Apply preset ${preset.name}`}
-                                data-testid={`button-apply-preset-${preset.id}`}
-                                className={`text-[9px] font-medium px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
+                                className={`text-[9px] font-medium px-2 h-6 rounded transition-colors flex items-center gap-1 ${
                                   isApplied
-                                    ? "bg-[#10b981] text-white"
+                                    ? "bg-[#10b981] text-white hover:bg-[#10b981]"
                                     : "bg-[#20242e] text-[#cfd3dc] group-hover:bg-[#0284c7] group-hover:text-white"
                                 }`}
+                                data-testid={`button-apply-preset-${preset.id}`}
                               >
                                 {isApplied ? (
                                   <>
-                                    <Check size={9} strokeWidth={2.5} aria-hidden="true" />
+                                    <Check size={9} strokeWidth={2.5} />
                                     <span>Applied</span>
                                   </>
                                 ) : (
-                                  <>
-                                    <span>Apply</span>
-                                  </>
+                                  <span>Apply</span>
                                 )}
-                              </button>
+                              </Button>
                             </div>
                           </div>
 
@@ -447,12 +572,92 @@ export function PresetsSheet() {
                     })}
                   </div>
                 )}
-              </>
+              </div>
+            )}
+
+            {/* SHADERS TAB CONTENT (remocn) */}
+            {presetsTab === "shaders" && (
+              <div className="space-y-3">
+                <div className="p-2.5 rounded-lg border bg-[#161224]/70 border-[#4c1d95]/40 text-[9.5px] text-[#d8b4fe] flex items-center gap-2">
+                  <Waves size={14} className="text-[#c084fc] shrink-0" />
+                  <span>
+                    Remocn WebGL & GLSL Shaders. Click <strong>Add as Layer</strong> to spawn a responsive animated background layer.
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {filteredShaders.map((shader) => {
+                    const isApplied = appliedPresetId === shader.id;
+
+                    return (
+                      <div
+                        key={shader.id}
+                        className="group p-3 rounded-lg border border-[#232731] bg-[#16181f] hover:border-[#a855f7]/50 hover:bg-[#181b24] transition-all flex flex-col gap-2"
+                        data-testid={`shader-card-${shader.id}`}
+                      >
+                        {/* Live Canvas Mini-Preview */}
+                        <ShaderPreviewCanvas shader={shader} />
+
+                        {/* Title & Category */}
+                        <div className="flex items-center justify-between mt-1">
+                          <span className="font-semibold text-[11px] text-white group-hover:text-[#c084fc] transition-colors">
+                            {shader.name}
+                          </span>
+                          <Badge variant="outline" className="text-[7.5px] px-1.5 py-0 bg-[#a855f7]/15 text-[#c084fc] border-[#a855f7]/30 capitalize">
+                            {shader.category}
+                          </Badge>
+                        </div>
+
+                        {/* Description */}
+                        <p className="text-[9px] text-[#8c919d] leading-relaxed line-clamp-2">
+                          {shader.description}
+                        </p>
+
+                        {/* Color swatches */}
+                        <div className="flex items-center gap-1 mt-0.5">
+                          {shader.colors.map((color, idx) => (
+                            <div
+                              key={idx}
+                              className="w-3 h-3 rounded-full border border-white/20 shadow-xs"
+                              style={{ backgroundColor: color }}
+                              title={color}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Actions */}
+                        <Button
+                          size="sm"
+                          onClick={() => handleApplyShaderAsLayer(shader)}
+                          className={`w-full text-[9px] font-medium h-6 mt-1 rounded transition-colors flex items-center justify-center gap-1.5 ${
+                            isApplied
+                              ? "bg-[#10b981] text-white hover:bg-[#10b981]"
+                              : "bg-[#20242e] text-[#cfd3dc] group-hover:bg-[#7c3aed] group-hover:text-white"
+                          }`}
+                          data-testid={`button-apply-shader-${shader.id}`}
+                        >
+                          {isApplied ? (
+                            <>
+                              <Check size={9} strokeWidth={2.5} />
+                              <span>Layer Created</span>
+                            </>
+                          ) : (
+                            <>
+                              <Plus size={10} />
+                              <span>Add as Background Layer</span>
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             )}
 
             {/* TEMPLATES TAB CONTENT */}
             {presetsTab === "templates" && (
-              <>
+              <div className="space-y-3">
                 <div className="p-2.5 rounded-lg border bg-[#171920] border-[#252832] text-[9.5px] text-[#9ca1ad] flex items-center justify-between">
                   <span>
                     Click any scene template to add as a new scene or merge into current layout.
@@ -492,51 +697,48 @@ export function PresetsSheet() {
                                 {template.name}
                               </span>
                               {template.isUserCreated ? (
-                                <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#8b5cf6]/20 text-[#c4b5fd] border border-[#8b5cf6]/30 font-medium">
+                                <Badge variant="outline" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-[#8b5cf6]/20 text-[#c4b5fd] border-[#8b5cf6]/30">
                                   My Template
-                                </span>
+                                </Badge>
                               ) : (
-                                <span className="text-[8px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#0284c7]/20 text-[#38bdf8] border border-[#0284c7]/30 font-medium capitalize">
+                                <Badge variant="outline" className="text-[8px] uppercase tracking-wider px-1.5 py-0 bg-[#0284c7]/20 text-[#38bdf8] border-[#0284c7]/30 capitalize">
                                   {template.category || "Layout"}
-                                </span>
+                                </Badge>
                               )}
                             </div>
 
                             <div className="flex items-center gap-1.5">
                               {template.isUserCreated && (
-                                <button
-                                  type="button"
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
                                   title="Delete user template"
-                                  aria-label={`Delete custom template ${template.name}`}
                                   onClick={(e) => handleDeleteUserPreset(e, template.id)}
-                                  className="text-[#64748b] hover:text-[#f87171] p-1 rounded hover:bg-[#232731] transition-colors"
+                                  className="h-6 w-6 text-[#64748b] hover:text-[#f87171] hover:bg-[#232731]"
                                   data-testid={`button-delete-template-${template.id}`}
                                 >
-                                  <Trash2 size={11} aria-hidden="true" />
-                                </button>
+                                  <Trash2 size={11} />
+                                </Button>
                               )}
 
-                              <button
-                                type="button"
-                                aria-label={isApplied ? `Inserted template ${template.name}` : `Insert template ${template.name}`}
-                                data-testid={`button-insert-template-${template.id}`}
-                                className={`text-[9px] font-medium px-2 py-0.5 rounded transition-colors flex items-center gap-1 ${
+                              <Button
+                                size="sm"
+                                className={`text-[9px] font-medium px-2 h-6 rounded transition-colors flex items-center gap-1 ${
                                   isApplied
-                                    ? "bg-[#10b981] text-white"
+                                    ? "bg-[#10b981] text-white hover:bg-[#10b981]"
                                     : "bg-[#20242e] text-[#cfd3dc] group-hover:bg-[#0284c7] group-hover:text-white"
                                 }`}
+                                data-testid={`button-insert-template-${template.id}`}
                               >
                                 {isApplied ? (
                                   <>
-                                    <Check size={9} strokeWidth={2.5} aria-hidden="true" />
+                                    <Check size={9} strokeWidth={2.5} />
                                     <span>Inserted</span>
                                   </>
                                 ) : (
-                                  <>
-                                    <span>Insert</span>
-                                  </>
+                                  <span>Insert</span>
                                 )}
-                              </button>
+                              </Button>
                             </div>
                           </div>
 
@@ -548,15 +750,15 @@ export function PresetsSheet() {
                           {/* Metadata row */}
                           <div className="flex items-center gap-3 pt-1 border-t border-[#1f222a] text-[8.5px] text-[#717684]">
                             <span className="flex items-center gap-1">
-                              <Layers size={10} className="text-[#38bdf8]" aria-hidden="true" />
+                              <Layers size={10} className="text-[#38bdf8]" />
                               <span>{template.layers.length} layers</span>
                             </span>
                             <span className="flex items-center gap-1">
-                              <Sparkles size={10} className="text-[#f59e0b]" aria-hidden="true" />
+                              <Sparkles size={10} className="text-[#f59e0b]" />
                               <span>{template.animationBlocks.length} animations</span>
                             </span>
                             <span className="flex items-center gap-1">
-                              <Clock size={10} className="text-[#a855f7]" aria-hidden="true" />
+                              <Clock size={10} className="text-[#a855f7]" />
                               <span>
                                 {template.durationFrames}f ({(template.durationFrames / (template.fps || 30)).toFixed(1)}s)
                               </span>
@@ -567,9 +769,9 @@ export function PresetsSheet() {
                     })}
                   </div>
                 )}
-              </>
+              </div>
             )}
-          </div>
+          </ScrollArea>
         </SheetContent>
       </Sheet>
 
@@ -593,7 +795,6 @@ export function PresetsSheet() {
           <div className="grid grid-cols-1 gap-2.5 py-2">
             <button
               type="button"
-              aria-label="Add template as a new separate scene"
               className="w-full text-left p-2.5 rounded-lg border border-[#2b303c] bg-[#1a1d24] hover:bg-[#222732] hover:border-[#38bdf8]/50 transition-colors group"
               onClick={() => handleConfirmTemplateAction("new")}
               data-testid="button-template-new-scene"
@@ -602,7 +803,7 @@ export function PresetsSheet() {
                 <span className="text-[11px] font-medium text-white group-hover:text-[#38bdf8]">
                   Add as New Scene
                 </span>
-                <Plus size={12} className="text-[#38bdf8]" aria-hidden="true" />
+                <Plus size={12} className="text-[#38bdf8]" />
               </div>
               <p className="text-[9px] text-[#7f8490]">
                 Creates a new clean scene in this project preserving your current composition.
@@ -611,7 +812,6 @@ export function PresetsSheet() {
 
             <button
               type="button"
-              aria-label="Merge template layers and animations into current scene"
               className="w-full text-left p-2.5 rounded-lg border border-[#2b303c] bg-[#1a1d24] hover:bg-[#222732] hover:border-[#38bdf8]/50 transition-colors group"
               onClick={() => handleConfirmTemplateAction("merge")}
               data-testid="button-template-merge"
@@ -620,7 +820,7 @@ export function PresetsSheet() {
                 <span className="text-[11px] font-medium text-white group-hover:text-[#38bdf8]">
                   Merge into Current Scene
                 </span>
-                <Layers size={12} className="text-[#38bdf8]" aria-hidden="true" />
+                <Layers size={12} className="text-[#38bdf8]" />
               </div>
               <p className="text-[9px] text-[#7f8490]">
                 Appends the template layers and keyframed animations alongside existing items.
@@ -629,14 +829,15 @@ export function PresetsSheet() {
           </div>
 
           <DialogFooter className="pt-2 border-t border-[#20232b]">
-            <button
+            <Button
               type="button"
-              aria-label="Cancel template insertion"
-              className="px-3 py-1 text-[10px] text-[#9ca1ad] hover:text-white rounded hover:bg-[#20232b] transition-colors"
+              variant="ghost"
+              size="sm"
+              className="text-[10px] text-[#9ca1ad] hover:text-white"
               onClick={() => setTemplateConfirmOpen(false)}
             >
               Cancel
-            </button>
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
