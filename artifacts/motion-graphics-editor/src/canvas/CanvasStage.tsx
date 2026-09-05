@@ -75,6 +75,10 @@ import { R3FSceneCanvas, type R3FSceneCanvasRef } from "./r3f/R3FSceneCanvas";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { R3FSnapGuides } from "./r3f/R3FSnapGuides";
+import {
+  useCanvasPointerHandlers,
+  type ResizeHandle,
+} from "./useCanvasPointerHandlers";
 
 export { drawLayer, getCachedImage, globalImageCache };
 
@@ -183,8 +187,6 @@ function hitTestLayer(layer: Layer, canvasX: number, canvasY: number): boolean {
   );
 }
 
-type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
-
 function generateArrowPath(w: number, h: number): string {
   const shaftT = Math.max(2, Math.min(10, h * 0.28));
   const headLen = Math.min(w * 0.4, Math.max(12, h));
@@ -193,41 +195,6 @@ function generateArrowPath(w: number, h: number): string {
   const shaftEnd = Math.max(0, w - headLen);
 
   return `M 0 ${cy - shaftT / 2} L ${shaftEnd} ${cy - shaftT / 2} L ${shaftEnd} ${cy - headW / 2} L ${w} ${cy} L ${shaftEnd} ${cy + headW / 2} L ${shaftEnd} ${cy + shaftT / 2} L 0 ${cy + shaftT / 2} Z`;
-}
-
-interface DragOperation {
-  type: "move" | "resize" | "rotate" | "pan" | "tilt" | "camera" | "create";
-  creationTool?: ToolId;
-  startWorldX?: number;
-  startWorldY?: number;
-  currentWorldX?: number;
-  currentWorldY?: number;
-  cameraDragMode?: "orbit" | "pan" | "dolly";
-  startClientX: number;
-  startClientY: number;
-  layerId?: string;
-  initialTransform?: Transform;
-  initialTransforms?: Map<string, Transform>;
-  initialPan?: { x: number; y: number };
-  initialCamera?: {
-    x: number;
-    y: number;
-    z: number;
-    pitch?: number;
-    yaw?: number;
-    roll?: number;
-    fov: number;
-    focusDistance: number;
-  };
-  resizeHandle?: ResizeHandle;
-  startAngle?: number;
-  groupCenter?: { x: number; y: number };
-  screenCenter?: { x: number; y: number };
-  candidates?: SnapCandidates;
-  otherLayers?: Layer[];
-  projectedScale?: number;
-  pendingSingleSelectId?: string;
-  hasMoved?: boolean;
 }
 
 const ZOOM_PRESETS = [25, 50, 75, 100, 125, 150, 200, 300, 400];
@@ -261,20 +228,12 @@ export function CanvasStage() {
   const updateCamera = useEditorStore((s) => s.updateCamera);
 
   const [containerSize, setContainerSize] = useState({ width: 1200, height: 700 });
-  const [activeGuides, setActiveGuides] = useState<SnapLine[]>([]);
   const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
   const [editingTextValue, setEditingTextValue] = useState("");
   const [zoomDropdownOpen, setZoomDropdownOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [isSpacePressed, setIsSpacePressed] = useState(false);
   const spaceDidPanRef = useRef(false);
-  const [createDragPreview, setCreateDragPreview] = useState<{
-    tool: ToolId;
-    startX: number;
-    startY: number;
-    currentX: number;
-    currentY: number;
-  } | null>(null);
   const [safeZoneMode, setSafeZoneMode] = useState<SafeZoneMode>("none");
 
   // Figma Vector / System Clipboard Paste Listener
