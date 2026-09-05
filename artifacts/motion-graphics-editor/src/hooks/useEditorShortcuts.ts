@@ -311,29 +311,52 @@ export function useEditorShortcuts() {
         return;
       }
 
-      // Nudge with Arrow keys
+      // Arrow keys: playback navigation, scene navigation, and layer nudging
       if (
         key === "ArrowUp" ||
         key === "ArrowDown" ||
         key === "ArrowLeft" ||
         key === "ArrowRight"
       ) {
-        if (selectedLayerIds.length > 0) {
-          e.preventDefault();
-          const step = e.shiftKey ? 10 : 1;
-          let dx = 0;
-          let dy = 0;
-          if (key === "ArrowUp") dy = -step;
-          if (key === "ArrowDown") dy = step;
-          if (key === "ArrowLeft") dx = -step;
-          if (key === "ArrowRight") dx = step;
+        const plain = !e.shiftKey && !e.altKey && !isCmdOrCtrl;
+        const uiStore = useEditorUIStore.getState();
 
-          store.nudgeSelectedLayers(dx, dy);
+        // Alt + Arrow: nudge selected layers (Shift = 10px fast nudge)
+        if (e.altKey && !isCmdOrCtrl) {
+          if (selectedLayerIds.length > 0) {
+            e.preventDefault();
+            const step = e.shiftKey ? 10 : 1;
+            let dx = 0;
+            let dy = 0;
+            if (key === "ArrowUp") dy = -step;
+            if (key === "ArrowDown") dy = step;
+            if (key === "ArrowLeft") dx = -step;
+            if (key === "ArrowRight") dx = step;
+
+            store.nudgeSelectedLayers(dx, dy);
+          }
           return;
         }
 
-        // When no layers are selected, ArrowUp/ArrowDown navigates previous/next scene
-        if (!isCmdOrCtrl && !e.altKey && (key === "ArrowUp" || key === "ArrowDown")) {
+        // Shift + Left/Right: jump currentFrame by ±fps (clamped by setCurrentFrame)
+        if (e.shiftKey && !isCmdOrCtrl && (key === "ArrowLeft" || key === "ArrowRight")) {
+          e.preventDefault();
+          const fps = currentScene?.fps ?? 30;
+          const delta = key === "ArrowLeft" ? -fps : fps;
+          uiStore.setCurrentFrame((f) => f + delta);
+          return;
+        }
+
+        // Plain Left/Right: move currentFrame by ±1 (clamped by setCurrentFrame)
+        if (plain && (key === "ArrowLeft" || key === "ArrowRight")) {
+          e.preventDefault();
+          const delta = key === "ArrowLeft" ? -1 : 1;
+          uiStore.setCurrentFrame((f) => f + delta);
+          return;
+        }
+
+        // Plain Up/Down: navigate previous/next scene (no-op at first/last)
+        if (plain && (key === "ArrowUp" || key === "ArrowDown")) {
           e.preventDefault();
           const currIdx = scenes.findIndex((s) => s.id === activeSceneId);
           if (key === "ArrowUp" && currIdx > 0) {
@@ -343,6 +366,7 @@ export function useEditorShortcuts() {
           }
           return;
         }
+
         return;
       }
 

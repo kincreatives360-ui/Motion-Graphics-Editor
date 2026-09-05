@@ -12,8 +12,8 @@
     "dev": "npm run dev --workspace=@workspace/motion-graphics-editor",
     "build": "npm run build --workspace=@workspace/motion-graphics-editor && node -e \"const fs=require('fs'); fs.rmSync('dist', {recursive: true, force: true}); fs.cpSync('artifacts/motion-graphics-editor/dist', 'dist', {recursive: true});\"",
     "lint": "tsc --build --noEmit",
-    "typecheck": "tsc --build && npm run typecheck --workspace=@workspace/motion-graphics-editor",
-    "test": "npm run test --workspace=@workspace/motion-graphics-editor"
+    "typecheck": "tsc --build && pnpm --filter ./artifacts/motion-graphics-editor run typecheck",
+    "test": "pnpm --filter ./artifacts/motion-graphics-editor run test"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",

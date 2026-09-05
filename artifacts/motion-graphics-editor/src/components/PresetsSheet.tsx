@@ -224,7 +224,7 @@ export function PresetsSheet() {
     addLayer(activeSceneId, {
       name: `${shader.name} Shader Background`,
       type: "shape",
-      shape: "rectangle",
+      shape: { kind: "rect", fill: shader.colors[0] || "#090d16" },
       transform: {
         x: 960,
         y: 540,
@@ -233,7 +233,6 @@ export function PresetsSheet() {
         rotation: 0,
         depth: 1000,
       },
-      fill: shader.colors[0] || "#090d16",
       opacity: 0.95,
       visible: true,
       locked: false,
