@@ -38,6 +38,7 @@ import {
 } from "../store/animation-blocks";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { EffectPickerPopover, type EffectPickerSlot } from "./EffectPickerPopover";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -106,13 +107,6 @@ interface HoveredEmptySlot {
   frame: number;
   leftPx: number;
   widthPx: number;
-}
-
-interface EffectPickerSlot {
-  layerId: string;
-  frame: number;
-  leftPx: number;
-  topPx: number;
 }
 
 export function Timeline() {
@@ -1741,57 +1735,15 @@ export function Timeline() {
               </div>
             )}
 
-            {/* Quick Effect Selection Popover */}
-            {effectPickerSlot && (
-              <div
-                className="fixed z-50 bg-card border border-border shadow-2xl rounded-lg p-2 text-foreground w-56 animate-in fade-in zoom-in-95 duration-100"
-                style={{
-                  left: `${Math.min(window.innerWidth - 240, Math.max(20, effectPickerSlot.leftPx - (scrollContainerRef.current?.scrollLeft || 0) + (leftHeadersRef.current?.clientWidth || 180)))}px`,
-                  top: `${Math.max(10, effectPickerSlot.topPx - 140)}px`,
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-border px-1 text-[10px] font-mono text-primary font-semibold uppercase tracking-wider">
-                  <span className="flex items-center gap-1">
-                    <Sparkles size={11} />
-                    <span>Choose Effect</span>
-                  </span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground text-sm leading-none"
-                    onClick={() => setEffectPickerSlot(null)}
-                  >
-                    ×
-                  </Button>
-                </div>
-                <div className="grid grid-cols-2 gap-1">
-                  {BLOCK_PRESETS.filter((p) => p.id !== "camera-move").slice(0, 6).map((preset) => (
-                    <Button
-                      variant="secondary"
-                      type="button"
-                      className="p-1.5 rounded bg-secondary/40 hover:bg-primary hover:text-primary-foreground border border-border hover:border-primary text-[10px] font-medium text-left truncate transition-colors"
-                      onClick={() => {
-                        handleAddBlock(
-                          activeScene.id,
-                          effectPickerSlot.layerId,
-                          preset.id,
-                          activeSceneDuration,
-                          effectPickerSlot.frame,
-                        );
-                        setEffectPickerSlot(null);
-                        setHoveredEmptySlot(null);
-                      }}
-                    >
-                      {preset.label}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
+            <EffectPickerPopover
+              effectPickerSlot={effectPickerSlot}
+              activeSceneId={activeSceneId}
+              activeSceneDuration={activeSceneDuration}
+              handleAddBlock={handleAddBlock}
+              setEffectPickerSlot={setEffectPickerSlot}
+              setHoveredEmptySlot={setHoveredEmptySlot}
+            />
 
-            {/* Global Timeline Needle Scrubber spanning full tracks height */}
             <div
               className="absolute top-0 bottom-0 w-[1.75px] bg-primary pointer-events-none z-40 shadow-[0_0_8px_var(--color-primary)] transition-[left] duration-75"
               style={{

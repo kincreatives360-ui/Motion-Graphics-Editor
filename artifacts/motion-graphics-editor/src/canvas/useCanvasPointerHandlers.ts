@@ -114,7 +114,7 @@ function generateArrowPath(w: number, h: number): string {
 export interface UseCanvasPointerHandlersArgs {
   containerRef: RefObject<HTMLDivElement | null>;
   canvasRef: RefObject<HTMLCanvasElement | null>;
-  dragOpRef: React.MutableRefObject<DragOperation | null>;
+  dragOpRef?: React.MutableRefObject<DragOperation | null>;
   spaceDidPanRef: React.MutableRefObject<boolean>;
   isSpacePressed: boolean;
   setIsSpacePressed: (v: boolean) => void;
